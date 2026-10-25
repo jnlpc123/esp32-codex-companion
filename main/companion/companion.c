@@ -211,7 +211,10 @@ void companion_get_visual(int channel, companion_visual_t *v)
     update_idle_locked(now,&c);
     int count=channel==1?c.done:channel==2?c.waiting:c.working;
     int role=channel;
-    if(s_config.all_screens){int state=task_counts_state(&c);role=state==3?1:state==2?2:3;}
+    if(s_config.all_screens){
+        int state=task_counts_state(&c);role=state==3?1:state==2?2:3;
+        count=role==1?c.done:role==2?c.waiting:c.working;
+    }
     uint16_t color=s_config.colors[role-1];
     if(role==1&&(c.working||c.waiting))color=(color>>1)&0x7bef;
     v->background=(s_config.all_screens?task_counts_state(&c)!=0:count>0)?color:0x0841;

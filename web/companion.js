@@ -160,7 +160,8 @@ async function init(){
   if(status.idle_playing)$('stateDetail').textContent='三屏播放中';
   $('soundHint').textContent=status.sound_available?'':'提示音不可用';
   cards.forEach((card,i)=>{
-   const count=(status.counts||{})[card.dataset.role]||0,active=status.idle_playing||count>0;
+   const role=status.config.layout==='all'?state:card.dataset.role;
+   const count=(status.counts||{})[role]||0,active=status.idle_playing||count>0;
    const lamp=card.querySelector('.lamp'),bg=status.backgrounds?.[i]??0x0841;
    card.classList.toggle('active',active);lamp.classList.toggle('inactive',!active);lamp.style.background=hex565(bg);
    const dots=card.querySelector('.task-dots');dots.replaceChildren();dots.style.color=hex565(dotColor565(bg));
