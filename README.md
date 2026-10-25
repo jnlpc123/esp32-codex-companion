@@ -1,5 +1,11 @@
 # ESP32 Codex Companion · v1.0.0
 
+> 原版硬件开源项目：[ESP32-C3 多功能信号灯（嘉立创开源硬件平台）](https://oshwhub.com/qq605581427/project_rxaoehqc)
+>
+> 原版 B 站视频：[BV1cUud6nE45](https://www.bilibili.com/video/BV1cUud6nE45/)
+
+感谢原项目作者公开硬件设计、软件源码及演示视频，为本项目提供了基础。本仓库在原项目基础上开发 Codex 状态同步与三屏动画功能；原版硬件资料请访问上方开源项目，相关署名与许可说明见文末“来源与许可”。
+
 ESP32-C3 三屏 Codex 状态灯：工作亮绿灯，等待回答或人工授权亮黄灯，完成亮红灯。素材在设备本地播放，USB 优先同步，Wi-Fi 自动备用。
 
 ## 功能
@@ -33,6 +39,37 @@ python .\companion_host\bridge.py --status
 桌面模式应显示 `connected:true`、`approval_source:uia`、`ui_probe_available:true`。发布包的迁移目录可能是 `config-templates/`；以包内快速开始为准。不要复制旧电脑的账号或信任记录。
 
 完整说明：[使用与 Codex 配置](使用说明与Codex配置.md) · [技术说明](COMPANION_README.md) · [协议](API.md) · [更新记录](CHANGELOG.md)。
+
+## 复制给 Codex：在另一台电脑部署
+
+适用于**已经烧入本项目固件的设备 + Windows 本地 Codex 桌面客户端**。在新电脑的 Codex 中打开一个可写目录，把下面整个提示词复制进去即可；无需填写旧电脑的用户名、COM10 或 IP。设备用 USB 数据线接入；旧电脑先暂停桥接，避免两台电脑同时控制。
+
+```text
+请直接帮我在这台 Windows 电脑部署 ESP32 Codex Companion，让已经刷好固件的三屏设备自动同步本机 Codex 任务状态，不要只给安装教程。
+
+项目：https://github.com/jnlpc123/esp32-codex-companion
+稳定版本：https://github.com/jnlpc123/esp32-codex-companion/releases/tag/v1.0.0
+
+设备已有固件和素材。本次只部署电脑端，保留设备图片、Wi-Fi、亮度、颜色和动画设置，不刷机、不擦除存储、不上传新素材。
+我同意本项目针对 Codex 的 Windows 只读检测：检测真实授权控件、侧栏等待状态和前台会话标题元数据，用于黄灯和查看完成会话自动确认；不读取聊天正文，不点击或代替我批准。
+
+请按以下步骤实际操作：
+1. 检查 Windows、当前用户、Python（项目已验证 3.12）、Codex 桌面与 CLI、USB 串口及已有桥接。复用可用环境；如缺依赖，按官方方式安装。不要把桌面安装目录里单独复制出的内部 codex.exe 当成完整 CLI，不复制其他电脑的账号、.codex、Hook 信任记录或 runtime。若不是 Windows 本地环境，先说明未验证的限制，不宣称已完成部署。
+2. 从上面的 v1.0.0 Release 下载 codex-companion-v1.0.0-windows.zip 和 SHA256SUMS.txt，核对 ZIP 的 SHA-256 后，完整解压到当前用户可写的固定目录，例如用户目录下的 CodexCompanion。不要从压缩包或临时目录运行。已有安装时先检查并备份配置，避免重复桥接或覆盖用户设置。先阅读包内“先读我_快速开始.md”和“使用说明与Codex配置.md”，核对实际脚本参数。
+3. 使用包内 config-templates/desktop.json 配置 companion_host/config.json。已有配置则合并 ui_approval_detection:true，保留其他字段。使用本机真实 Python 和安装路径；串口自动发现，不写死 COM10，设备 IP 不沿用其他电脑的地址。Wi-Fi 备用优先让 USB 握手学习设备地址；确需指定时再询问本设备 IP。
+4. 运行 companion_host/install.py 生成 review-hooks.json，检查其中带 --vibe-companion 的 8 项事件及命令路径，再运行 install.py --install。合并时保留原有其他 Hooks，并备份原配置；不要修改安全策略或绕过 Hook 信任。
+5. 需要我登录、审阅信任、重启客户端或操作数据线时，给出简短明确的操作并等我完成。请让我在同一用户的 Codex CLI 中运行 /hooks，审阅、信任并启用本项目的八项定义；不能代我批准，也不能把“已写入 hooks.json”当成“已激活”。不要索取密码、令牌或验证码。
+6. 提醒我重新打开日常使用的 Codex 桌面后，运行 companion_host/bridge.py --resume 和 --status。检查 connected:true、transport:usb、approval_source:uia、ui_probe_available:true。若失败，检查 bridge.log、串口占用、原生 USB 识别及客户端检测兼容性；只修复本项目相关问题。不要启动多个桥接进程，也不要自动添加开机计划任务。
+7. 验证真实 Codex 任务：运行中绿灯；真实问答或人工授权出现时黄灯，普通自动审查不应误亮；完成时红灯，查看对应完成会话约 1 秒后确认其完成标记，其他未查看任务保留。使用自然出现的授权，不制造危险命令或测试授权。无法触发的场景明确标为待验证，网页测试按钮不能代替真实任务验收。
+8. 验证 USB 优先和 Wi-Fi 备用：需同一局域网，拔掉 USB 后板子仍要有独立供电。只有供电条件具备时，再引导我拔插检查 transport 变化；断电不算切换失败，也不算 Wi-Fi 备用通过。迁移时提醒旧电脑暂停桥接。
+9. 最后告诉我安装目录、Python 路径、实际串口、设备网址、检查结果，以及启动、暂停、恢复和查看状态的可复制命令。区分已验证与待验证项目，不上传本机配置或日志到公开仓库。
+
+除上述必须由我完成的交互外，请持续执行到连接和可执行的验证完成。若权限或硬件条件阻塞，说明具体阻塞及我需要做的一步，不要假报成功。
+```
+
+提示词中的下载版本固定为 v1.0.0，便于复现。它部署的是电脑桥接，不需要编译固件或安装 ESP-IDF。纯 CLI 的授权判断、macOS/Linux/WSL 和云端任务不在此桌面方案的等效验证范围内。
+
+Hook 信任步骤依据 [OpenAI 官方 Hooks 文档](https://learn.chatgpt.com/docs/hooks)；USB/Wi-Fi 桥接及 Windows 只读检测属于本项目实现。
 
 ## 构建与测试
 
