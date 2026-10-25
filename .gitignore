@@ -1,0 +1,47 @@
+tmp/
+# components/
+managed_components/
+build/
+dist/
+.vscode/
+.devcontainer/
+sdkconfig.old
+sdkconfig
+.env
+releases/
+main/assets/lang_config.h
+main/mmap_generate_emoji.h
+.DS_Store
+.cache
+*.pyc
+*.bin
+mmap_generate_*.h
+.clangd
+# Node.js
+node_modules/
+package-lock.json
+.npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.yarn-integrity
+# Build output
+spiffs_image
+
+bin
+temp
+README.md.old
+# Local companion event queue/runtime state
+companion_host/runtime/
+__pycache__/
+*.pyc
+
+# Local build, device configuration and generated hook definitions
+/build-short/
+/companion_host/config.json
+/companion_host/review-hooks.json
+/docs/superpowers/
+/flash_download_tool_3.9.7.zip
+/图片/
+/素材/
+/转码.sh

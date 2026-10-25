@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict');
+const {storageRequired}=require('../../web/companion.js');
+const frame=size=>({blob:{size},delay:40});
+const reserve=131072;
+assert.equal(storageRequired([frame(251)]),reserve+512+256+512);
+assert.equal(storageRequired([frame(252)]),reserve+768+256+512);
+assert.equal(storageRequired([frame(251*104)]),reserve+(104+2)*256+256+512);
+assert.equal(storageRequired([frame(251)],{size:252}),reserve+512+768+512);
+assert.equal(storageRequired(Array.from({length:30},()=>frame(30000))),1068800);
+console.log('SPIFFS page/index/timing/preview allocation and safety reserve: PASS');

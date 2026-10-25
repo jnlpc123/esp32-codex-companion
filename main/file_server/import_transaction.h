@@ -1,0 +1,5 @@
+#pragma once
+#include "esp_http_server.h"
+esp_err_t import_transaction_handler(httpd_req_t *request);
+void import_recover(void);
+void import_failed(const char *filename);
