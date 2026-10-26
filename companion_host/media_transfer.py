@@ -55,6 +55,8 @@ class MediaTransfer:
                         retries+=1
                         if retries>=3:raise TimeoutError('USB upload made no progress') from None
                         continue
+                except (ValueError,OSError) as exc:
+                    raise ValueError(f'{exc}; USB file offset {offset}/{len(data)}') from None
                 if result.get('offset')!=end:raise ValueError('Unexpected USB upload offset; do not activate')
                 offset=end;retries=0
             try:self.submit(device,'file_end',dict(file_token=token))

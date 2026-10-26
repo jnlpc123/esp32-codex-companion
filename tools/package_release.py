@@ -37,8 +37,9 @@ manifest=dict(product='ESP32 Codex Companion',version=version,source_commit=comm
     privacy='No account data, credentials, local configuration, runtime queues or full-flash backups included')
 windows=args.out/(prefix+'-windows.zip')
 with zipfile.ZipFile(windows,'w',zipfile.ZIP_DEFLATED) as archive:
-    for path in (root/'companion_host').rglob('*'):
-        if not path.is_file() or any(part in ('runtime','__pycache__') for part in path.parts):continue
+    for name in filter(None,names):
+        if not name.startswith('companion_host/'):continue
+        path=root/name
         if path.suffix not in ('.py','.cs','.exe') and path.name!='pyserial-LICENSE.txt':continue
         archive.write(path,path.relative_to(root).as_posix())
     for path in (root/'distribution/config-templates').glob('*.json'):archive.write(path,'config-templates/'+path.name)

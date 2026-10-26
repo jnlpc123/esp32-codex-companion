@@ -1,3 +1,4 @@
 {
-  "ui_approval_detection": false
+  "ui_approval_detection": false,
+  "management_port": 17831
 }

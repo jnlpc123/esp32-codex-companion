@@ -297,7 +297,7 @@ static void clear_media(cJSON *request,cJSON *reply,const char **error)
         *error="cleanup confirmation does not match scope";return;
     }
     if(!storage_service_lock()){*error="storage busy; retry";return;}
-    if(storage_import_busy()||storage_maintenance_busy()||!anim_cleanup_available()){
+    if(storage_async_busy()||storage_import_busy()||storage_maintenance_busy()||!anim_cleanup_available()){
         *error="upload or cleanup in progress; finish it first";storage_service_unlock();return;
     }
     storage_maintenance_set(true);bool started=false;
@@ -395,7 +395,7 @@ esp_err_t companion_handle_json(const char *input, bool usb, char *output, size_
         } else if(!strcmp(command,"prune_cache")) {
             if(!storage_service_lock())error="storage busy; retry";
             else{
-                if(storage_maintenance_busy()||storage_import_busy())error="storage cleanup busy; retry";
+                if(storage_async_busy()||storage_maintenance_busy()||storage_import_busy())error="storage cleanup busy; retry";
                 else{pruned=anim_prune_cache();if(pruned<0)error="storage cleanup busy; retry";}
                 storage_service_unlock();
             }
@@ -430,13 +430,14 @@ esp_err_t companion_handle_json(const char *input, bool usb, char *output, size_
     cJSON_AddNumberToObject(reply, "v", 1);
     cJSON_AddNumberToObject(reply, "id", id);
     cJSON_AddBoolToObject(reply, "ok", !error);
-    if (error) cJSON_AddStringToObject(reply, "error", error);
+    if (error&&!cJSON_HasObjectItem(reply,"error")) cJSON_AddStringToObject(reply, "error", error);
     else if(!compact&&strcmp(op->valuestring,"get_catalog")) {
         xSemaphoreTake(s_lock, portMAX_DELAY);
         cJSON_AddStringToObject(reply, "product", "vibe-companion");
         if(!strcmp(op->valuestring,"hello")){
             cJSON *caps=cJSON_AddArrayToObject(reply,"capabilities");
             cJSON_AddItemToArray(caps,cJSON_CreateString("storage_v1"));cJSON_AddItemToArray(caps,cJSON_CreateString("usb_media_v1"));
+            cJSON_AddItemToArray(caps,cJSON_CreateString("storage_async_v1"));
         }
         cJSON_AddStringToObject(reply,"alpha_format","vaf1");
         if(pruned>=0)cJSON_AddNumberToObject(reply,"cache_files_removed",pruned);

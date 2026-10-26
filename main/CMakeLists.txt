@@ -12,7 +12,7 @@ idf_component_register(SRCS
     esp_driver_i2c esp_driver_i2s esp_driver_ledc esp_driver_usb_serial_jtag esp_wifi lwip driver esp_codec_dev mdns cjson mbedtls)
 
 target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_partition_read" "-Wl,--wrap=SPIFFS_gc")
-foreach(symbol SPIFFS_open SPIFFS_write SPIFFS_close SPIFFS_fflush SPIFFS_remove SPIFFS_rename SPIFFS_update_meta SPIFFS_fupdate_meta SPIFFS_ftruncate spiffs_gc_check)
+foreach(symbol SPIFFS_open SPIFFS_write SPIFFS_lseek SPIFFS_close SPIFFS_fflush SPIFFS_remove SPIFFS_rename SPIFFS_update_meta SPIFFS_fupdate_meta SPIFFS_ftruncate spiffs_gc_check)
     target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=${symbol}")
 endforeach()
 target_include_directories(${COMPONENT_LIB} PRIVATE "$ENV{IDF_PATH}/components/spiffs" "$ENV{IDF_PATH}/components/spiffs/spiffs/src")

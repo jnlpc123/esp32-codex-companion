@@ -2,6 +2,15 @@
 #include <ctype.h>
 #include <string.h>
 
+size_t media_storage_reliable_free(size_t total,size_t used,size_t partition_bytes)
+{
+    if(used>total)return 0;
+    size_t limit=(partition_bytes/4)*3;
+    if(used>=limit)return 0;
+    size_t available=limit-used;
+    return available<total-used?available:total-used;
+}
+
 static const char *flat(const char *name) { return name && *name=='/' ? name+1 : name; }
 media_file_kind_t media_storage_kind(const char *path)
 {

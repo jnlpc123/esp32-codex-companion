@@ -12,9 +12,16 @@ parser.add_argument('--expected-device',required=True,help='Exact device_id from
 parser.add_argument('--temporary-upload',action='store_true',help='Write, verify and abort only a new unselected test import')
 args=parser.parse_args()
 port=serial.Serial(port=None,baudrate=115200,timeout=.1,write_timeout=1)
-port.dtr=port.rts=False;port.port=args.port;port.open()
-port.write(b'\n') # Discard a partial line left by a prior serial owner.
+port.dtr=port.rts=False;port.port=args.port
 rpc=UsbProtocol(port,timeout=3)
+raw_request=rpc.request
+def request(op,**fields):
+    result=raw_request(op,**fields);deadline=time.monotonic()+12
+    while result.get('pending') and result.get('storage_job'):
+        assert time.monotonic()<deadline,'Storage I/O timed out'
+        time.sleep(.02);result=raw_request('storage_job_status',job_token=result['storage_job'])
+    return result
+rpc.request=request
 token=None
 def inventory():
     files=[];cursor=0;revision=None
@@ -25,7 +32,17 @@ def inventory():
         if page['complete']:return sorted((f['name'],f['bytes']) for f in files)
         assert page['next_cursor']>cursor;cursor=page['next_cursor']
 try:
-    hello=rpc.request('hello');assert hello['device_id']==args.expected_device,'Wrong board'
+    ready=time.monotonic()+30
+    while True:
+        try:
+            if not port.is_open:port.open()
+            port.write(b'\n') # Discard a partial line left by a prior owner.
+            hello=rpc.request('hello');break
+        except (OSError,TimeoutError):
+            port.close()
+            if time.monotonic()>ready:raise
+            time.sleep(.5)
+    assert hello['device_id']==args.expected_device,'Wrong board'
     assert 'usb_media_v1' in hello.get('capabilities',[]),'Upgrade firmware first'
     before=inventory();info=rpc.request('sysinfo');deadline=time.monotonic()+10
     while True:

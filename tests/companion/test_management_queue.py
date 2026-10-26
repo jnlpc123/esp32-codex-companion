@@ -43,5 +43,16 @@ class QueueTests(unittest.TestCase):
             def readline(self):return b'VIBE {"id":1,"ok":true,"boot_id":2}\n'
         peer=UsbProtocol(Port());peer.boot_id=1;peer.request('get')
         self.assertEqual(peer.boot_id,2)
+    def test_pending_storage_io_is_polled_between_owner_calls(self):
+        class SlowPeer(Peer):
+            def request(self,op,**fields):
+                self.calls.append((op,fields))
+                if op=='file_chunk':return dict(ok=True,pending=True,storage_job='abc')
+                return dict(ok=True,offset=768)
+        q=ManagementQueue();q.set_device('A','usb',[]);p=SlowPeer();answers=[]
+        t=threading.Thread(target=lambda:answers.append(q.submit('A','file_chunk',{},1)));t.start()
+        while t.is_alive():q.process_one(p,'A','usb');time.sleep(.002)
+        t.join();self.assertEqual(answers[0].get('offset'),768)
+        self.assertEqual([x[0] for x in p.calls],['file_chunk','storage_job_status'])
 
 if __name__=='__main__':unittest.main()

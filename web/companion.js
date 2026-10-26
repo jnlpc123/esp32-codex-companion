@@ -226,7 +226,14 @@ async function init(){
    for(const position of taskDotLayout(status.idle_playing?0:count)){const dot=document.createElement('i');if(position.hollow)dot.className='overflow';dot.style.setProperty('--rise',String(144-position.y));dots.append(dot);}
    let label=card.querySelector('.task-count');if(!label){label=document.createElement('p');label.className='task-count';lamp.after(label);}label.textContent=status.idle_playing?'空闲动画 · 彩色播放':count+' 个任务'+(active?' · 彩色播放':' · 灰度暂停');
    const dir=status.config.media[i];const image=card.querySelector('img');
-   if(dir&&image.dataset.dir!==dir){image.dataset.dir=dir;image.src=dir.replace(/^\/data/,'')+'/_preview.png';image.hidden=false;image.onerror=()=>{if(!image.src.endsWith('/0001.jpg'))image.src=dir.replace(/^\/data/,'')+'/0001.jpg';else image.hidden=true;};}
+   if(dir&&image.dataset.dir!==dir){
+    image.dataset.dir=dir;const preview=dir.replace(/^\/data/,'')+'/_preview.png';let retries=0;
+    image.hidden=false;image.onerror=()=>{
+     if(image.dataset.dir!==dir)return;
+     if(retries++<2){setTimeout(()=>{if(image.dataset.dir===dir)image.src=preview;},150);return;}
+     if(!image.src.endsWith('/0001.jpg'))image.src=dir.replace(/^\/data/,'')+'/0001.jpg';else image.hidden=true;
+    };image.src=preview;
+   }
    if(!dir){image.hidden=true;delete image.dataset.dir;image.removeAttribute('src');}
    if(fill||!initialized)card.querySelector('.existing-dir').value=dir;
   });
@@ -266,8 +273,8 @@ async function init(){
     const frames=await decodeFile(file,(n,total)=>{message.textContent=`处理动图 ${n}/${total}`;bar.value=n/total*25;});
    const needed=storageRequired(frames,frames[0].preview);
    let info=await request('/api/sysinfo');
-   if(needed>info.spiffs_free){message.textContent='正在释放未使用的播放缓存…';await finishCleanup(await request('/api/companion',JSON.stringify({v:1,op:'clear_media',scope:'cache',confirm:'DELETE_UNUSED_CACHE'})),request);info=await request('/api/sysinfo');}
-   if(needed>info.spiffs_free)throw Error(`空间不足：本次需约 ${Math.ceil(needed/1024)} KB（含安全余量），剩余 ${Math.floor(info.spiffs_free/1024)} KB。请使用更短的动图。`);
+   if(needed>(info.spiffs_reliable_free??info.spiffs_free)){message.textContent='正在释放未使用的播放缓存…';await finishCleanup(await request('/api/companion',JSON.stringify({v:1,op:'clear_media',scope:'cache',confirm:'DELETE_UNUSED_CACHE'})),request);info=await request('/api/sysinfo');}
+   if(needed>(info.spiffs_reliable_free??info.spiffs_free))throw Error(`可写空间不足：本次需约 ${Math.ceil(needed/1024)} KiB（含安全余量），写入余量约 ${Math.floor((info.spiffs_reliable_free??info.spiffs_free)/1024)} KiB。请先清除不用的素材，或使用更短的动图。`);
     const random=new Uint32Array(1);crypto.getRandomValues(random);const directory='v'+random[0].toString(16).padStart(8,'0');
     const device=latest.device_id;
     const result=await uploadSequence({frames,preview:frames[0].preview,channel:index+1,directory,request:(path,body)=>request(path,body,device),onProgress:(n,total)=>{bar.value=25+n/total*75;message.textContent=`保存到设备 ${n}/${total}，请保持页面开启`;}});
@@ -300,7 +307,7 @@ async function init(){
   catch(error){$('wifiMessage').textContent=error.message;}
  });
  async function storage(){try{
-  const info=await request('/api/sysinfo');$('storageInfo').textContent=storageSummary(info);
+  const info=await request('/api/sysinfo');$('storageInfo').textContent=storageSummary(info)+(Number.isFinite(info.spiffs_upload_budget)?` · 建议导入预算 ${Math.floor(info.spiffs_upload_budget/1024)} KiB`:'');
   $('deviceInfo').textContent=`ESP32-C3 · ${Math.round(info.cpu_freq_hz/1000000)} MHz\n可用内存 ${Math.round(info.free_heap/1024)} KiB · 固件 ${info.app_version}`;
   try{let report;const deadline=Date.now()+8000;do{
     report=await request('/api/companion',JSON.stringify({v:1,op:'storage_info'}));

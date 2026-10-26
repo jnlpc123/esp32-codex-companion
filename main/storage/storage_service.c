@@ -22,23 +22,40 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <errno.h>
+#include <stdatomic.h>
 
 #define FILE_LIMIT (256*1024)
 #define BLOCK_LIMIT 768
 static SemaphoreHandle_t s_lock;
 static char s_directory[10],s_import_token[17],s_file_token[17],s_filename[24],s_last_file[17];
 static FILE *s_file;
+static bool s_file_position_dirty;
 static size_t s_written,s_length;
 static uint32_t s_crc,s_expected_crc;
 static int64_t s_last_access;
-static unsigned s_revision;
+static atomic_uint s_revision;
 static volatile bool s_maintenance;
 static SemaphoreHandle_t s_report_lock;
 static cJSON *s_report;
 static bool s_report_running,s_report_failed;
+static esp_err_t s_report_error;
 static unsigned s_report_revision;
+static SemaphoreHandle_t s_io_lock;
+static volatile bool s_io_pending;
+static char s_io_token[17];
+static cJSON *s_io_request,*s_io_result;
+static bool storage_command_sync(const cJSON *o,cJSON *r,const char **error);
+static void storage_io_task(void *unused);
 static const char *begin_import(const char *dir,cJSON *reply);
 static bool file_path(const char *name,char full[80]);
+static bool upload_room(size_t length)
+{
+    size_t total,used;
+    const esp_partition_t *p=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_SPIFFS,NULL);
+    if(!p||esp_spiffs_info(NULL,&total,&used)!=ESP_OK)return false;
+    size_t pages=(length+250)/251,index=1+(pages>103?(pages-103+123)/124:0);
+    return media_storage_reliable_free(total,used,p->size)>=131072+(pages+index)*256;
+}
 
 static const char *str(const cJSON *o,const char *key)
 {const cJSON *p=cJSON_GetObjectItemCaseSensitive(o,key);return cJSON_IsString(p)?p->valuestring:NULL;}
@@ -82,10 +99,11 @@ static void recover(void)
     }
 }
 esp_err_t storage_service_init(void)
-{s_lock=xSemaphoreCreateMutex();s_report_lock=xSemaphoreCreateMutex();if(!s_lock||!s_report_lock)return ESP_ERR_NO_MEM;recover();return ESP_OK;}
+{s_lock=xSemaphoreCreateMutex();s_report_lock=xSemaphoreCreateMutex();s_io_lock=xSemaphoreCreateMutex();if(!s_lock||!s_report_lock||!s_io_lock)return ESP_ERR_NO_MEM;recover();return ESP_OK;}
 bool storage_service_lock(void){return s_lock&&xSemaphoreTake(s_lock,0)==pdTRUE;}
 void storage_service_unlock(void){xSemaphoreGive(s_lock);}
 bool storage_maintenance_busy(void){return s_maintenance;}
+bool storage_async_busy(void){return s_io_pending;}
 void storage_maintenance_set(bool active){s_maintenance=active;}
 void storage_note_change(void){s_revision++;}
 bool storage_import_busy(void)
@@ -134,6 +152,7 @@ esp_err_t storage_http_upload(httpd_req_t *req)
         storage_service_unlock();return http_json(req,"invalid upload or import busy",0);
     }
     struct stat st;if(!stat(path,&st)){storage_service_unlock();return http_json(req,"file already exists",0);}
+    if(!upload_room(req->content_len)){storage_service_unlock();return http_json(req,"safe SPIFFS upload budget exhausted; clear unused media",0);}
     FILE *f=fopen(path,"wb");const char *error=f?NULL:"cannot create upload file";
     char buffer[1024];int received=0;while(!error&&received<req->content_len){
         int amount=req->content_len-received;if(amount>(int)sizeof(buffer))amount=sizeof(buffer);
@@ -160,13 +179,15 @@ esp_err_t storage_system_json(cJSON *r)
     cJSON_AddNumberToObject(r,"free_heap",esp_get_free_heap_size());
     cJSON_AddNumberToObject(r,"spiffs_total",total);cJSON_AddNumberToObject(r,"spiffs_used",used);cJSON_AddNumberToObject(r,"spiffs_free",total-used);
     const esp_partition_t *p=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_SPIFFS,NULL);
-    if(p){cJSON_AddNumberToObject(r,"storage_offset",p->address);cJSON_AddNumberToObject(r,"storage_partition_bytes",p->size);}
+    if(p){cJSON_AddNumberToObject(r,"storage_offset",p->address);cJSON_AddNumberToObject(r,"storage_partition_bytes",p->size);
+        size_t free=media_storage_reliable_free(total,used,p->size);
+        cJSON_AddNumberToObject(r,"spiffs_reliable_free",free);cJSON_AddNumberToObject(r,"spiffs_upload_budget",free>131072?free-131072:0);}
     return ESP_OK;
 }
 typedef struct {DIR *dir;media_storage_live_t live;void *live_context;int64_t deadline;} walk_t;
 static int walk_next(void *context,char *name,size_t length,size_t *size)
 {
-    walk_t *w=context;if(esp_timer_get_time()>w->deadline)return -1;
+    walk_t *w=context;if(esp_timer_get_time()>w->deadline)return -2;
     errno=0;struct dirent *e=readdir(w->dir);if(!e)return errno?-1:0;
     const char *n=e->d_name;if(*n=='/')n++;if(strlen(n)>=length)return -1;
     strcpy(name,n);char p[80];struct stat st;
@@ -220,7 +241,7 @@ static esp_err_t report(cJSON *r)
     walk_t w={.dir=opendir("/data"),.deadline=esp_timer_get_time()+5000000};if(!w.dir)return ESP_FAIL;
     size_t bytes[6]={0},size;unsigned files[6]={0},count=0;char name[64];int result;
     while((result=walk_next(&w,name,sizeof(name),&size))>0){unsigned k=bucket(name,&c,&cache);bytes[k]+=size;files[k]++;count++;if(!(count%4))vTaskDelay(1);}
-    closedir(w.dir);if(result<0)return ESP_FAIL;
+    closedir(w.dir);if(result<0)return result==-2?ESP_ERR_TIMEOUT:ESP_FAIL;
     cJSON *o=cJSON_AddObjectToObject(r,"storage");
     cJSON_AddNumberToObject(o,"current_media_bytes",bytes[0]);cJSON_AddNumberToObject(o,"other_media_bytes",bytes[1]+bytes[2]);
     cJSON_AddNumberToObject(o,"cache_bytes",bytes[3]);cJSON_AddNumberToObject(o,"system_unknown_bytes",bytes[4]+bytes[5]);
@@ -232,17 +253,18 @@ static esp_err_t report(cJSON *r)
 static void report_task(void *unused)
 {
     (void)unused;unsigned revision=s_revision;cJSON *snapshot=cJSON_CreateObject();
-    bool failed=!snapshot||report(snapshot)!=ESP_OK||revision!=s_revision;
+    esp_err_t result=snapshot?report(snapshot):ESP_ERR_NO_MEM;
+    bool failed=result!=ESP_OK||revision!=s_revision;
     xSemaphoreTake(s_report_lock,portMAX_DELAY);
     cJSON_Delete(s_report);s_report=failed?NULL:snapshot;if(failed)cJSON_Delete(snapshot);
-    s_report_revision=revision;s_report_failed=failed;s_report_running=false;
+    s_report_revision=revision;s_report_error=result;s_report_failed=failed;s_report_running=false;
     xSemaphoreGive(s_report_lock);vTaskDelete(NULL);
 }
 static esp_err_t report_request(cJSON *reply)
 {
     xSemaphoreTake(s_report_lock,portMAX_DELAY);
     if(!s_report_running&&s_report_revision==s_revision&&(s_report||s_report_failed)){
-        if(s_report_failed){s_report_failed=false;xSemaphoreGive(s_report_lock);return ESP_FAIL;}
+        if(s_report_failed){s_report_failed=false;esp_err_t error=s_report_error;xSemaphoreGive(s_report_lock);return error==ESP_OK?ESP_FAIL:error;}
         cJSON *copy=cJSON_Duplicate(s_report,true);
         if(!copy){xSemaphoreGive(s_report_lock);return ESP_ERR_NO_MEM;}
         while(copy->child){cJSON *item=cJSON_DetachItemViaPointer(copy,copy->child);char key[40];strlcpy(key,item->string,sizeof(key));cJSON_AddItemToObject(reply,key,item);}
@@ -250,7 +272,10 @@ static esp_err_t report_request(cJSON *reply)
     }
     if(!s_report_running){
         s_report_running=true;
-        if(xTaskCreate(report_task,"storage_report",8192,NULL,4,NULL)!=pdPASS){s_report_running=false;xSemaphoreGive(s_report_lock);return ESP_ERR_NO_MEM;}
+        // Match AnimTask's priority: three continuously active displays can
+        // otherwise starve a lower-priority scan until its deadline expires.
+        // The scan yields every four entries; USB state handling remains at 6.
+        if(xTaskCreate(report_task,"storage_report",8192,NULL,5,NULL)!=pdPASS){s_report_running=false;xSemaphoreGive(s_report_lock);return ESP_ERR_NO_MEM;}
     }
     cJSON_AddBoolToObject(reply,"pending",true);xSemaphoreGive(s_report_lock);return ESP_OK;
 }
@@ -279,6 +304,7 @@ static const char *begin_import(const char *dir,cJSON *r)
     if(*s_directory&&selected(s_directory)&&!s_file)finish_import();
     if(storage_import_busy())return "another import is still in progress";
     if(selected(dir))return "selected directory cannot be reused";
+    if(!upload_room(13))return "safe SPIFFS upload budget exhausted; clear unused media";
     DIR *d=opendir("/data");if(!d)return "storage unavailable";struct dirent *e;bool exists=false,scan_failed=false;
     for(;;){errno=0;e=readdir(d);if(!e){scan_failed=errno!=0;break;}const char *n=e->d_name;if(*n=='/')n++;if(!strncmp(n,dir,9)&&n[9]=='/'){exists=true;break;}}
     closedir(d);if(scan_failed)return "storage enumeration failed";if(exists)return "directory already exists";
@@ -304,7 +330,7 @@ static const char *read_file(const cJSON *o,cJSON *r)
     encoded[encoded_size]=0;cJSON_AddStringToObject(r,"data",(char*)encoded);cJSON_AddNumberToObject(r,"offset",offset);
     cJSON_AddNumberToObject(r,"length",st.st_size);cJSON_AddBoolToObject(r,"eof",offset+n==(size_t)st.st_size);return NULL;
 }
-bool storage_service_command(const cJSON *o,cJSON *r,const char **error)
+static bool storage_command_sync(const cJSON *o,cJSON *r,const char **error)
 {
     const char *op=str(o,"op");if(!op)return false;
     bool known=!strcmp(op,"sysinfo")||!strcmp(op,"storage_info")||!strcmp(op,"storage_list")||!strcmp(op,"file_read")||
@@ -313,7 +339,7 @@ bool storage_service_command(const cJSON *o,cJSON *r,const char **error)
     if(!storage_service_lock()){*error="storage busy; retry";return true;}
     if(s_maintenance&&strcmp(op,"sysinfo")){*error="cleanup in progress";storage_service_unlock();return true;}
     if(!strcmp(op,"sysinfo")){if(storage_system_json(r)!=ESP_OK)*error="storage statistics unavailable";}
-    else if(!strcmp(op,"storage_info")){if(report_request(r)!=ESP_OK)*error="storage inventory failed or changed; retry";}
+    else if(!strcmp(op,"storage_info")){esp_err_t status=report_request(r);if(status!=ESP_OK)*error=status==ESP_ERR_TIMEOUT?"storage inventory scan timed out; retry":status==ESP_ERR_NO_MEM?"storage inventory allocation failed; retry":"storage inventory scan failed; retry";}
     else if(!strcmp(op,"storage_list")){unsigned cursor,limit;if(!number(o,"cursor",65535,&cursor)||!number(o,"limit",8,&limit)||!limit)*error="invalid list page";else if(list(r,cursor,limit)!=ESP_OK)*error="storage enumeration failed";}
     else if(!strcmp(op,"file_read"))*error=read_file(o,r);
     else if(!strcmp(op,"import_begin"))*error=begin_import(str(o,"directory"),r);
@@ -325,16 +351,21 @@ bool storage_service_command(const cJSON *o,cJSON *r,const char **error)
         unsigned length,crc;char path[80];struct stat st;
         if(!match(str(o,"token"),s_import_token)||!file_path(str(o,"name"),path)||!number(o,"length",FILE_LIMIT,&length)||!length||!number(o,"crc32",UINT32_MAX,&crc))*error="invalid file begin";
         else if(s_file)*error="another file is open";
+        else if(!upload_room(length)){*error="safe SPIFFS upload budget exhausted; clear unused media";cJSON_AddNumberToObject(r,"errno",ENOSPC);}
         else if(!stat(path,&st))*error="file already exists";
         else if(!(s_file=fopen(path,"w+b")))*error="cannot create upload file";
-        else{strcpy(s_filename,str(o,"name"));token(s_file_token);s_length=length;s_written=0;s_crc=0;s_expected_crc=crc;s_last_access=esp_timer_get_time();cJSON_AddStringToObject(r,"file_token",s_file_token);}
+        else{strcpy(s_filename,str(o,"name"));token(s_file_token);s_length=length;s_written=0;s_crc=0;s_expected_crc=crc;s_file_position_dirty=false;s_last_access=esp_timer_get_time();cJSON_AddStringToObject(r,"file_token",s_file_token);}
     }else if(!strcmp(op,"file_chunk")){
         unsigned offset,crc;unsigned char raw[BLOCK_LIMIT],old[BLOCK_LIMIT];size_t n=0;const char *data=str(o,"data");
         if(!s_file||!match(str(o,"file_token"),s_file_token)||!number(o,"offset",FILE_LIMIT,&offset)||!number(o,"crc32",UINT32_MAX,&crc)||!data||strlen(data)>1024||mbedtls_base64_decode(raw,sizeof(raw),&n,(const unsigned char*)data,strlen(data))||!n||animation_crc32_le(0,raw,n)!=crc)*error="invalid file chunk/CRC";
         else if(offset>s_written||n>s_length-offset)*error="invalid chunk offset/length";
-        else if(offset<s_written){if(offset+n>s_written||fseek(s_file,offset,SEEK_SET)||fread(old,1,n,s_file)!=n||memcmp(old,raw,n))*error="conflicting duplicate chunk";}
-        else if(fseek(s_file,s_written,SEEK_SET)||fwrite(raw,1,n,s_file)!=n||fflush(s_file))*error="upload write failed";
-        else{s_written+=n;s_crc=animation_crc32_le(s_crc,raw,n);s_revision++;}
+        else if(offset<s_written){s_file_position_dirty=true;if(offset+n>s_written||fseek(s_file,offset,SEEK_SET)||fread(old,1,n,s_file)!=n||memcmp(old,raw,n))*error="conflicting duplicate chunk";}
+        // Sequential chunks are already positioned at the end. Seeking on
+        // every block flushes SPIFFS' partial page and amplifies metadata/GC.
+        else if(s_file_position_dirty&&fseek(s_file,s_written,SEEK_SET)){*error="upload seek failed";cJSON_AddNumberToObject(r,"errno",errno);}
+        else if(fwrite(raw,1,n,s_file)!=n){*error="upload data write failed";cJSON_AddNumberToObject(r,"errno",errno);}
+        else if(fflush(s_file)){*error="upload flush failed";cJSON_AddNumberToObject(r,"errno",errno);}
+        else{s_file_position_dirty=false;s_written+=n;s_crc=animation_crc32_le(s_crc,raw,n);s_revision++;}
         s_last_access=esp_timer_get_time();cJSON_AddNumberToObject(r,"offset",s_written);
     }else if(!strcmp(op,"file_status")){
         if(!match(str(o,"file_token"),s_file_token))*error="unknown file token";else{cJSON_AddNumberToObject(r,"offset",s_written);cJSON_AddNumberToObject(r,"length",s_length);}
@@ -345,4 +376,48 @@ bool storage_service_command(const cJSON *o,cJSON *r,const char **error)
         else{bool ok=!fflush(s_file);if(fclose(s_file))ok=false;s_file=NULL;if(!ok)*error="file flush failed";else{strcpy(s_last_file,s_file_token);s_file_token[0]=0;s_revision++;}}
     }else *error="unknown storage operation";
     storage_service_unlock();return true;
+}
+
+static void storage_io_task(void *unused)
+{
+    (void)unused;cJSON *result=cJSON_CreateObject();const char *error=NULL;
+    if(result)storage_command_sync(s_io_request,result,&error);
+    if(error)cJSON_AddStringToObject(result,"error",error);
+    cJSON_Delete(s_io_request);
+    xSemaphoreTake(s_io_lock,portMAX_DELAY);
+    s_io_request=NULL;s_io_result=result;s_io_pending=false;
+    xSemaphoreGive(s_io_lock);vTaskDelete(NULL);
+}
+
+bool storage_service_command(const cJSON *o,cJSON *r,const char **error)
+{
+    const char *op=str(o,"op");if(!op)return false;
+    bool status=!strcmp(op,"storage_job_status");
+    bool writing=!strncmp(op,"import_",7)||!strcmp(op,"file_begin")||!strcmp(op,"file_chunk")||!strcmp(op,"file_end");
+    if(!status&&!writing)return storage_command_sync(o,r,error);
+    if(xSemaphoreTake(s_io_lock,0)!=pdTRUE){*error="storage I/O busy; retry";return true;}
+    if(status){
+        if(!match(str(o,"job_token"),s_io_token))*error="unknown storage I/O job";
+        else if(s_io_pending){cJSON_AddBoolToObject(r,"pending",true);cJSON_AddStringToObject(r,"storage_job",s_io_token);}
+        else if(!s_io_result)*error="storage I/O allocation failed";
+        else{
+            cJSON *copy=cJSON_Duplicate(s_io_result,true);
+            if(!copy)*error="storage I/O allocation failed";
+            else{
+                while(copy->child){cJSON *item=cJSON_DetachItemViaPointer(copy,copy->child);char key[40];strlcpy(key,item->string,sizeof(key));cJSON_AddItemToObject(r,key,item);}
+                cJSON_Delete(copy);if(cJSON_HasObjectItem(r,"error"))*error="storage operation failed";
+            }
+        }
+    }else if(s_io_pending)*error="storage I/O busy; retry";
+    else{
+        s_io_request=cJSON_Duplicate(o,true);
+        if(!s_io_request)*error="storage I/O allocation failed";
+        else{
+            cJSON_Delete(s_io_result);s_io_result=NULL;token(s_io_token);s_io_pending=true;
+            if(xTaskCreate(storage_io_task,"storage_io",8192,NULL,5,NULL)!=pdPASS){
+                cJSON_Delete(s_io_request);s_io_request=NULL;s_io_pending=false;s_io_token[0]=0;*error="storage I/O allocation failed";
+            }else{cJSON_AddBoolToObject(r,"pending",true);cJSON_AddStringToObject(r,"storage_job",s_io_token);}
+        }
+    }
+    xSemaphoreGive(s_io_lock);return true;
 }

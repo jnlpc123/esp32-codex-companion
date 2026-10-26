@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 typedef enum { MEDIA_OTHER, MEDIA_FILE, MEDIA_CACHE } media_file_kind_t;
+size_t media_storage_reliable_free(size_t total,size_t used,size_t partition_bytes);
 typedef struct {
     size_t current_bytes, unused_bytes, cache_bytes, other_bytes;
     size_t removed_bytes;

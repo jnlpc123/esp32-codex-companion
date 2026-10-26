@@ -8,6 +8,7 @@ esp_err_t storage_service_init(void);
 bool storage_service_lock(void);
 void storage_service_unlock(void);
 bool storage_import_busy(void); // Caller holds service lock.
+bool storage_async_busy(void);
 bool storage_maintenance_busy(void);
 void storage_maintenance_set(bool active);
 void storage_note_change(void);

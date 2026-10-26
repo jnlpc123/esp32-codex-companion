@@ -22,6 +22,10 @@ static bool live(void *context,const char *name)
 {(void)context;return !strcmp(name,".anim_0123abcd.r5");}
 int main(void)
 {
+    assert(media_storage_reliable_free(2583041,1947509,2818048)==166027);
+    assert(media_storage_reliable_free(2583041,2041885,2818048)==71651);
+    assert(media_storage_reliable_free(1000,1100,1200)==0);
+    assert(media_storage_reliable_free(1000,950,10000)==50);
     const char *keep[]={"/data/v30ba1805","/data/ve640e6b7","/data/vdffe6960",NULL};
     assert(media_storage_kind("v30ba1805/0001.a5")==MEDIA_FILE);
     assert(media_storage_kind("/3_cleaned/_timing.txt")==MEDIA_FILE);

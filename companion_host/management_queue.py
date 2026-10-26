@@ -6,7 +6,7 @@ import time
 
 OPS=frozenset(('get','hello','get_catalog','sysinfo','storage_info','storage_list','file_read',
                'config','activate','ack','tone','manual_state','clear_media','cleanup_status','prune_cache','import_begin',
-               'import_commit','import_abort','file_begin','file_chunk','file_end','file_status'))
+               'import_commit','import_abort','file_begin','file_chunk','file_end','file_status','storage_job_status'))
 
 class ManagementQueue:
     def __init__(self):
@@ -26,6 +26,16 @@ class ManagementQueue:
     def snapshot(self):
         with self.lock:return dict(device_id=self.identity,transport=self.transport,capabilities=self.capabilities[:],boot_id=self.boot_id)
     def submit(self,device_id,op,fields,timeout=5):
+        limit=12 if timeout==5 and op.startswith(('import_','file_')) else timeout
+        deadline=time.monotonic()+limit
+        result=self._submit_one(device_id,op,fields,min(5,limit))
+        while result.get('pending') and result.get('storage_job'):
+            remaining=deadline-time.monotonic()
+            if remaining<=0:raise TimeoutError('USB storage I/O timed out; inspect before retrying')
+            time.sleep(.02)
+            result=self._submit_one(device_id,'storage_job_status',{'job_token':result['storage_job']},min(5,remaining))
+        return result
+    def _submit_one(self,device_id,op,fields,timeout):
         if op not in OPS:raise ValueError('Unsupported management operation')
         event=threading.Event()
         item=dict(device=device_id,op=op,fields=copy.deepcopy(fields),deadline=time.monotonic()+timeout,done=event,cancelled=False)

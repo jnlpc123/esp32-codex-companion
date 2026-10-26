@@ -34,7 +34,11 @@ USB 原生 Serial/JTAG，115200波特率，UTF-8单行JSON；响应为 `VIBE ` �
 
 ## 1.1 USB 管理
 
-`hello.capabilities` 声明 `storage_v1`、`usb_media_v1`；旧固件不应接受新上传。状态 `state/sync/ping` 按规定续租，管理操作不续租。
+`hello.capabilities` 声明 `storage_v1`、`usb_media_v1`、`storage_async_v1`；旧固件不应接受新上传。状态 `state/sync/ping` 按规定续租，管理操作不续租。
+
+USB 的 import_begin/commit/abort、file_begin/chunk/end 返回 pending:true 和 storage_job，客户端以 storage_job_status(job_token=storage_job) 每 20ms 查询至完成；状态查询不持有串口，也不重发写请求。每次仅一个 I/O 任务，完成结果保留至下一次写任务；未知或重启失效 token 拒绝。电脑桥接在管理线程中轮询，串口所有者每次只处理一条请求。后台垃圾回收耗时不会阻塞串口状态命令。旧 HTTP 导入路径保持原行为。
+
+sysinfo 额外返回 spiffs_reliable_free、spiffs_upload_budget：以分区约 75% 利用范围作保守估算，并预留 128 KiB。它们不是剩余 Flash 的替代计量或写入成功保证。网页和设备都在写入前检查；名义剩余空间大于预算时仍可能拒绝导入，不自动删除用户素材。
 
 `storage_info` 首次返回 `pending:true`，80ms 后重试，建议总超时 8 秒；扫描在独立任务执行，修订号变化则拒绝不一致结果。完成返回 `storage.categories` 六类：current/uploaded/incomplete/cache/legacy_named/unknown。文件逻辑字节数不等于 SPIFFS 分配占用。
 
