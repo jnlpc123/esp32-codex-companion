@@ -12,7 +12,9 @@ parser.add_argument('--expected-device',required=True,help='Exact device_id from
 parser.add_argument('--temporary-upload',action='store_true',help='Write, verify and abort only a new unselected test import')
 args=parser.parse_args()
 port=serial.Serial(port=None,baudrate=115200,timeout=.1,write_timeout=1)
-port.dtr=port.rts=False;port.port=args.port;port.open();rpc=UsbProtocol(port,timeout=3)
+port.dtr=port.rts=False;port.port=args.port;port.open()
+port.write(b'\n') # Discard a partial line left by a prior serial owner.
+rpc=UsbProtocol(port,timeout=3)
 token=None
 def inventory():
     files=[];cursor=0;revision=None
