@@ -2,6 +2,7 @@
 #include "companion.h"
 #include "companion_render.h"
 #include "notify_tone.h"
+#include "storage_service.h"
 #include "config.h"
 #include "display_init.h"
 #include "file_serving_example_common.h"
@@ -48,6 +49,7 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(example_mount_storage("/data"));
     ESP_ERROR_CHECK(companion_init());
+    ESP_ERROR_CHECK(storage_service_init());
     companion_config_t config; companion_get_config(&config);
     bool mx, my, swap; int rotation;
     orientation(&mx, &my, &swap, &rotation);

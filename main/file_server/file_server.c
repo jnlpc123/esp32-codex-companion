@@ -12,6 +12,7 @@
 #include <errno.h>
 #include "cJSON.h"
 #include "import_transaction.h"
+#include "storage_service.h"
 #include "esp_timer.h"
 
 extern const unsigned char _binary_vibe_index_start[], _binary_vibe_index_end[];
@@ -53,50 +54,7 @@ static bool safe_media_name(const char *name)
     return ext && (!strcmp(ext, ".jpg") || !strcmp(ext, ".txt") || !strcmp(ext,".a5") || !strcmp(ext,".png"));
 }
 
-static esp_err_t upload_error(httpd_req_t *req,const char *stage,int error)
-{
-    char body[256];
-    snprintf(body,sizeof(body),"{\"ok\":false,\"error\":\"Upload failed at %s (errno %d); previous selection preserved\",\"stage\":\"%s\",\"errno\":%d}",stage,error,stage,error);
-    httpd_resp_set_type(req,"application/json");
-    httpd_resp_set_status(req,error==ENOSPC?"507 Insufficient Storage":"500 Internal Server Error");
-    return httpd_resp_sendstr(req,body);
-}
-
-static esp_err_t upload(httpd_req_t *req)
-{
-    const char *name = req->uri + strlen("/upload/");
-    const char *basename=strrchr(name,'/');basename=basename?basename+1:name;
-    if(!strcmp(basename,"_upload.txt"))return httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Reserved upload marker");
-    if (!safe_media_name(name) || !req->content_len || req->content_len > 65536)
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid image/timing upload");
-    char path[48], temporary[64];
-    snprintf(path, sizeof(path), "/data/%s", name);
-    snprintf(temporary, sizeof(temporary), "%s.tmp", path);
-    // Imports use a new directory per transaction; never overwrite active frames.
-    struct stat info;
-    if (stat(path, &info) == 0) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "File already exists; use a new import directory");
-    FILE *f = fopen(temporary, "wb");
-    if (!f) return upload_error(req,"open",errno);
-    char buffer[1024]; size_t remaining = req->content_len;
-    bool ok = true;int saved_errno=0;const char *stage="receive";
-    int64_t deadline=esp_timer_get_time()+30000000;
-    while (remaining) {
-        int n = httpd_req_recv(req, buffer, remaining < sizeof(buffer) ? remaining : sizeof(buffer));
-        if(n==HTTPD_SOCK_ERR_TIMEOUT&&esp_timer_get_time()<deadline)continue;
-        if(n<=0){saved_errno=n;ok=false;break;}
-        if(ok&&fwrite(buffer,1,n,f)!=n){saved_errno=errno;stage="write";ok=false;}
-        remaining -= n;
-    }
-    if(fclose(f)&&ok){saved_errno=errno;stage="close";ok=false;}
-    const char *ext=strrchr(name,'.');
-    if(ok && ext && !strcmp(ext,".a5") && !alpha_cache_validate(temporary)) {
-        unlink(temporary);import_failed(name);return httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Invalid transparent frame CRC or pixel data");
-    }
-    if(ok&&rename(temporary,path)){saved_errno=errno;stage="publish";ok=false;}
-    if (!ok) { unlink(temporary);import_failed(name);return upload_error(req,stage,saved_errno); }
-    httpd_resp_set_type(req, "application/json");
-    return httpd_resp_sendstr(req, "{\"ok\":true}");
-}
+static esp_err_t upload(httpd_req_t *req) { return storage_http_upload(req); }
 
 static esp_err_t serve(httpd_req_t *req)
 {
@@ -128,7 +86,6 @@ static esp_err_t serve(httpd_req_t *req)
 
 esp_err_t example_start_file_server(const char *base_path)
 {
-    import_recover();
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.max_uri_handlers = 16; config.stack_size = 8192;

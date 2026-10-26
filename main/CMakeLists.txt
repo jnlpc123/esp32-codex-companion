@@ -2,14 +2,14 @@ idf_component_register(SRCS
     "main.c" "display/backlight.c" "display/display_init.c"
     "display/animation_cache.c" "display/animation_crc.c" "display/companion_render.c" "display/alpha_cache.c"
     "../tests/companion/alpha_cache_selftest.c"
-    "settings/settings.c" "storage/mount.c" "storage/fast_read.c"
+    "settings/settings.c" "storage/mount.c" "storage/fast_read.c" "storage/media_storage.c" "storage/storage_service.c"
     "core/app_tasks.c" "companion/companion.c" "companion/task_status.c" "companion/usb_link.c" "companion/notify_tone.c"
     "audio/es8311.c" "wifi/wifi_manager.c" "wifi/captive_portal.c" "dns_server/dns_server.c"
     "file_server/file_server.c" "file_server/import_transaction.c" "file_server/file_server_wifi.c" "file_server/file_server_sysinfo.c"
     INCLUDE_DIRS "." "core" "display" "wifi" "file_server" "settings" "storage" "audio" "dns_server" "companion"
     PRIV_REQUIRES esp_app_format esp_hw_support spi_flash esp_partition esp_lcd_gc9a01 esp_lcd_panel_io_additions
     esp_lcd esp_timer esp_rom fatfs esp_event vfs esp_netif nvs_flash spiffs esp_http_server esp_jpeg
-    esp_driver_i2c esp_driver_i2s esp_driver_ledc esp_driver_usb_serial_jtag esp_wifi lwip driver esp_codec_dev mdns cjson)
+    esp_driver_i2c esp_driver_i2s esp_driver_ledc esp_driver_usb_serial_jtag esp_wifi lwip driver esp_codec_dev mdns cjson mbedtls)
 
 target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_partition_read" "-Wl,--wrap=SPIFFS_gc")
 foreach(symbol SPIFFS_open SPIFFS_write SPIFFS_close SPIFFS_fflush SPIFFS_remove SPIFFS_rename SPIFFS_update_meta SPIFFS_fupdate_meta SPIFFS_ftruncate spiffs_gc_check)

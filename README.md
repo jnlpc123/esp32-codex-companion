@@ -1,4 +1,4 @@
-# ESP32 Codex Companion · v1.0.0
+# ESP32 Codex Companion · v1.1.0-rc.1
 
 > 原版硬件开源项目：[ESP32-C3 多功能信号灯（嘉立创开源硬件平台）](https://oshwhub.com/qq605581427/project_rxaoehqc)
 >
@@ -17,6 +17,10 @@ ESP32-C3 三屏 Codex 状态灯：工作亮绿灯，等待回答或人工授权�
 - 生成不同提示音；保留缺失音频芯片时跳过初始化的兼容处理。
 
 ## 使用
+
+1.1 测试版新增 USB 本机后台：更新固件与电脑桥接后，执行 `python .\companion_host\bridge.py --resume`，打开 `http://127.0.0.1:17831/`。查询、设置、素材导入及预览均通过 USB，不要求设备连接 Wi-Fi；原设备 Wi-Fi 后台继续保留。桥接重启后请刷新页面。完整操作与限制见 [USB 后台与存储管理](docs/usb-management.md)。正式版 v1.0.0 不具备此后台，请勿只替换网页。
+
+“清除内存”保留当前三屏选择的整组素材，删除其他上传素材及闲置缓存；“全部清除”停止三屏并删除全部上传素材。两者都会先确认，保留 Wi-Fi、亮度、颜色及系统文件。界面中的容量指 Flash 文件系统容量，RAM 单独显示。
 
 已安装固件的板子换电脑不需要重新烧录。设备网页：`http://esp32.local/` 或实际局域网IP；首次配网连接 `ESP32_...` 热点，访问 `http://192.168.4.1/`。
 
@@ -80,7 +84,7 @@ idf.py set-target esp32c3
 idf.py build
 ```
 
-电脑端及网页回归需要 Node.js、Python 3，无 npm 第三方依赖：
+电脑端及网页回归需要 Node.js、Python 3，以及 C 编译器；原生 C 清理测试可用 Zig（`ZIG` 指向 zig.exe）或设置 `CC`。无 npm 第三方依赖：
 
 ```sh
 npm test

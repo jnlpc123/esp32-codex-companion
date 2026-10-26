@@ -1,6 +1,7 @@
 #include "animation_cache.h"
 #include "display_init.h"
 #include "animation_crc.h"
+#include "storage_service.h"
 #include "esp_spiffs.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -119,6 +120,7 @@ bool animation_cache_prepare(const char *jpeg_path, char *cache_path, size_t pat
         ok = rename(temp_path, cache_path) == 0;
     }
     if (!ok) unlink(temp_path);
+    storage_note_change(); // Includes failed temporary writes and replacement.
     if (ok) ESP_LOGI(TAG, "Cached %s: %lu bytes, pixel CRC verified", jpeg_path, (unsigned long)h.bytes);
     return ok;
 }

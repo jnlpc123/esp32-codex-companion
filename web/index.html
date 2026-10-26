@@ -23,7 +23,7 @@
 <progress max="100" value="0" hidden></progress><p class="upload-message" aria-live="polite"></p>
 <details><summary>选择已有素材</summary><label>目录<input class="existing-dir" placeholder="/data/3_cleaned" maxlength="47"></label><button class="use-existing secondary" type="button">使用此目录</button></details>
 </article></section>
-<section class="storage-settings"><h2>存储</h2><div class="actions"><button id="cleanStorage" class="secondary" type="button">清理内部空间</button><span id="storageInfo"></span></div><p id="storageMessage" class="message" role="status"></p></section>
+<section class="storage-settings"><h2>存储</h2><div class="actions"><button id="cleanStorage" class="secondary" type="button" title="保留当前三屏素材，删除其余上传素材">清除内存</button><button id="clearAllStorage" class="secondary danger" type="button" title="删除全部素材，包括当前展示内容">全部清除</button><span id="storageInfo"></span></div><p id="storageBreakdown" class="hint"></p><details id="storageDetails"><summary>素材占用</summary><ul id="storageInventory"></ul></details><p id="storageMessage" class="message" role="status"></p></section>
 <section class="settings"><h2>显示与提醒</h2><form id="settingsForm"><div class="form-grid">
 <label>状态范围<select id="scopeMode"><option value="all">全部任务</option><option value="project">指定项目</option><option value="session">指定会话</option></select></label>
 <label>项目 / 会话<select id="scopeTarget" disabled><option value="">全部任务</option></select></label>
@@ -37,6 +37,6 @@
 </div><label class="check"><input id="muted" type="checkbox">静音</label><p id="soundHint" class="hint"></p><div class="actions"><button type="submit">保存设置</button><button id="testDone" class="secondary" type="button">试听完成提示音</button><button id="testWaiting" class="secondary" type="button">试听等待提示音</button></div><p id="settingsMessage" class="message" role="status"></p></form></section>
 <details class="advanced"><summary>连接与诊断</summary><div class="advanced-content"><div class="actions"><button class="secondary state-test" data-state="working" type="button">测试绿灯</button><button class="secondary state-test" data-state="waiting" type="button">测试黄灯</button><button class="secondary state-test" data-state="done" type="button">测试红灯</button></div>
 <form id="wifiForm"><h3>Wi-Fi · 2.4 GHz</h3><div class="form-grid"><label>网络名称<input id="ssid" maxlength="32" autocomplete="off" required></label><label>密码<input id="wifiPassword" type="password" maxlength="64" autocomplete="new-password"></label></div><button type="submit" class="secondary">连接网络</button><p id="wifiMessage" class="message" role="status"></p></form><pre id="deviceInfo">读取中</pre></div></details>
-<footer><span>v1.0.0</span><a href="https://github.com/jnlpc123/esp32-codex-companion#readme" target="_blank" rel="noopener">使用说明</a></footer>
+<footer><span>v1.1.0-rc.1</span><a href="https://github.com/jnlpc123/esp32-codex-companion#readme" target="_blank" rel="noopener">使用说明</a></footer>
 <div id="globalMessage" class="global-message" role="status" hidden></div>
 </main></body></html>

@@ -12,6 +12,7 @@
 #include "esp_netif.h"
 #include "esp_spiffs.h"
 #include "fast_read.h"
+#include "storage_service.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <stdio.h>
@@ -230,6 +231,8 @@ void companion_get_visual(int channel, companion_visual_t *v)
 
 static esp_err_t update_config(cJSON *o, bool activate, const char **error)
 {
+    if(!storage_service_lock()){*error="storage busy; retry";return ESP_ERR_INVALID_STATE;}
+    if(storage_maintenance_busy()){*error="cleanup in progress";storage_service_unlock();return ESP_ERR_INVALID_STATE;}
     xSemaphoreTake(s_config_lock, portMAX_DELAY);
     companion_config_t next, before;
     companion_get_config(&before); next = before;
@@ -251,7 +254,7 @@ static esp_err_t update_config(cJSON *o, bool activate, const char **error)
     }
     if (!valid || !anim_can_accept(changed)) {
         *error = valid ? "animation queue busy; retry" : "invalid configuration or incomplete image sequence";
-        xSemaphoreGive(s_config_lock); return ESP_ERR_INVALID_ARG;
+        xSemaphoreGive(s_config_lock);storage_service_unlock();return ESP_ERR_INVALID_ARG;
     }
     cJSON *saved = config_json(&next);
     char encoded[1024];
@@ -263,13 +266,60 @@ static esp_err_t update_config(cJSON *o, bool activate, const char **error)
     cJSON_Delete(saved);
     if (ret == ESP_OK) {
         xSemaphoreTake(s_lock, portMAX_DELAY); s_config = next; s_revision++; xSemaphoreGive(s_lock);
+        storage_note_change();
         notify_tone_settings(next.volume, next.muted);
         display_set_brightness(next.brightness);
         for (int i = 0; i < 3; i++) if (strcmp(next.media[i], before.media[i]) || (activate && i == selected - 1))
             anim_playback_start(next.media[i], i + 1);
     } else *error = "configuration could not be saved";
     xSemaphoreGive(s_config_lock);
+    storage_service_unlock();
     return ret;
+}
+
+static void cleanup_json(cJSON *reply,const anim_cleanup_status_t *job)
+{
+    cJSON *o=cJSON_AddObjectToObject(reply,"cleanup");
+    cJSON_AddNumberToObject(o,"job_id",job->id);cJSON_AddBoolToObject(o,"pending",job->pending);
+    cJSON_AddStringToObject(o,"scope",job->mode==2?"all":job->mode==3?"cache":"unused");
+    cJSON_AddNumberToObject(o,"files_removed",job->stats.removed_files);
+    cJSON_AddNumberToObject(o,"logical_bytes_removed",job->stats.removed_bytes);
+    cJSON_AddNumberToObject(o,"errors",job->stats.errors);cJSON_AddNumberToObject(o,"result",job->result);
+    cJSON_AddNumberToObject(o,"free_before",job->free_before);cJSON_AddNumberToObject(o,"free_after",job->free_after);
+}
+static void clear_media(cJSON *request,cJSON *reply,const char **error)
+{
+    cJSON *scope=cJSON_GetObjectItemCaseSensitive(request,"scope"),*confirm=cJSON_GetObjectItemCaseSensitive(request,"confirm");
+    bool all=cJSON_IsString(scope)&&!strcmp(scope->valuestring,"all");
+    bool cache=cJSON_IsString(scope)&&!strcmp(scope->valuestring,"cache");
+    const char *expected=all?"DELETE_ALL_MEDIA":cache?"DELETE_UNUSED_CACHE":"DELETE_UNUSED_MEDIA";
+    if(!cJSON_IsString(scope)||(!all&&!cache&&strcmp(scope->valuestring,"unused"))||!cJSON_IsString(confirm)||strcmp(confirm->valuestring,expected)){
+        *error="cleanup confirmation does not match scope";return;
+    }
+    if(!storage_service_lock()){*error="storage busy; retry";return;}
+    if(storage_import_busy()||storage_maintenance_busy()||!anim_cleanup_available()){
+        *error="upload or cleanup in progress; finish it first";storage_service_unlock();return;
+    }
+    storage_maintenance_set(true);bool started=false;
+    xSemaphoreTake(s_config_lock,portMAX_DELAY);
+    companion_config_t c;companion_get_config(&c);
+    if(all){
+        for(int i=0;i<3;i++)c.media[i][0]=0;
+        cJSON *saved=config_json(&c);char encoded[1024];esp_err_t result=ESP_ERR_NO_MEM;
+        if(saved&&cJSON_PrintPreallocated(saved,encoded,sizeof(encoded),false)){
+            result=nvs_set_str(s_nvs,"config",encoded);if(result==ESP_OK)result=nvs_commit(s_nvs);
+        }
+        cJSON_Delete(saved);
+        if(result!=ESP_OK){*error="empty media selection could not be saved";goto finish;}
+        xSemaphoreTake(s_lock,portMAX_DELAY);s_config=c;s_revision++;xSemaphoreGive(s_lock);
+        storage_note_change();
+    }
+    uint32_t id=anim_clear_media_start(all?2:cache?3:1);anim_cleanup_status_t job;
+    if(!id||!anim_cleanup_get(id,&job))*error="cleanup could not start; inspect current selection";
+    else{started=true;cleanup_json(reply,&job);}
+finish:
+    if(!started)storage_maintenance_set(false);
+    xSemaphoreGive(s_config_lock);storage_service_unlock();
 }
 
 esp_err_t companion_handle_json(const char *input, bool usb, char *output, size_t size)
@@ -281,13 +331,21 @@ esp_err_t companion_handle_json(const char *input, bool usb, char *output, size_
     bool play = false, waiting = false;
     int tone_kind=0,pruned=-1;
     bool have_frame=false;alpha_cache_info_t frame_info={0};
+    bool compact=false;
     cJSON *op = cJSON_GetObjectItemCaseSensitive(request, "op");
     cJSON *version = cJSON_GetObjectItemCaseSensitive(request, "v");
     if (!request || !cJSON_IsObject(request) || !integer_field(request, "id", 0, INT_MAX, &id) ||
         (version && (!cJSON_IsNumber(version) || version->valuedouble != 1)) || !cJSON_IsString(op)) error = "invalid protocol v1 command";
     if (!error) {
         const char *command = op->valuestring;
-        if (!strcmp(command, "state") || (!usb && !strcmp(command, "sync"))) {
+        if((compact=storage_service_command(request,reply,&error))){}
+        else if(!strcmp(command,"clear_media")){clear_media(request,reply,&error);compact=true;}
+        else if(!strcmp(command,"cleanup_status")){
+            compact=true;int id=0;anim_cleanup_status_t job;
+            if(!integer_field(request,"job_id",1,INT_MAX,&id)||!anim_cleanup_get(id,&job))error="unknown cleanup job";
+            else{cleanup_json(reply,&job);if(!job.pending&&job.result<0)error="cleanup incomplete; inspect storage before retrying";}
+        }
+        else if (!strcmp(command, "state") || !strcmp(command,"manual_state") || (!usb && !strcmp(command, "sync"))) {
             cJSON *state = cJSON_GetObjectItemCaseSensitive(request, "state");
             cJSON *notify = cJSON_GetObjectItemCaseSensitive(request, "notify");
             int value = -1;
@@ -301,7 +359,7 @@ esp_err_t companion_handle_json(const char *input, bool usb, char *output, size_
             else {
                 xSemaphoreTake(s_lock,portMAX_DELAY);
                 int64_t now=esp_timer_get_time();task_counts_t old=effective_counts(now);
-                if(usb){s_remote_counts=counts;s_contact_us=now;s_manual_until=0;}
+                if(usb&&strcmp(command,"manual_state")){s_remote_counts=counts;s_contact_us=now;s_manual_until=0;}
                 else if(!strcmp(command,"sync")){
                     if(!task_counts_equal(&counts,&s_wifi_counts))s_manual_until=0;
                     s_wifi_counts=counts;s_wifi_contact_us=now;
@@ -335,7 +393,12 @@ esp_err_t companion_handle_json(const char *input, bool usb, char *output, size_
             storage_use_driver_reads(false);
             if(result!=ESP_OK){snprintf(diagnostic,sizeof(diagnostic),"Storage GC failed (ESP %d, SPIFFS %d)",result,storage_last_gc_error());error=diagnostic;}
         } else if(!strcmp(command,"prune_cache")) {
-            pruned=anim_prune_cache();if(pruned<0)error="storage cleanup busy; retry";
+            if(!storage_service_lock())error="storage busy; retry";
+            else{
+                if(storage_maintenance_busy()||storage_import_busy())error="storage cleanup busy; retry";
+                else{pruned=anim_prune_cache();if(pruned<0)error="storage cleanup busy; retry";}
+                storage_service_unlock();
+            }
         } else if (!strcmp(command, "config") || !strcmp(command, "activate")) {
             update_config(request, !strcmp(command, "activate"), &error);
         } else if (!strcmp(command,"frame_info")) {
@@ -354,7 +417,7 @@ esp_err_t companion_handle_json(const char *input, bool usb, char *output, size_
             if (!cJSON_IsString(kind) || (strcmp(kind->valuestring, "waiting") && strcmp(kind->valuestring, "done"))) error = "unknown notification kind";
             else { play = true; waiting = !strcmp(kind->valuestring, "waiting"); tone_kind=waiting?0:2; }
         } else if (strcmp(command, "hello") && strcmp(command, "ping") && strcmp(command, "get")) error = "unknown command";
-        if (!error && usb && strcmp(command, "get")) {
+        if (!error && usb && (!strcmp(command,"state")||!strcmp(command,"ping"))) {
             xSemaphoreTake(s_lock, portMAX_DELAY); s_contact_us = esp_timer_get_time(); xSemaphoreGive(s_lock);
         }
     }
@@ -368,9 +431,13 @@ esp_err_t companion_handle_json(const char *input, bool usb, char *output, size_
     cJSON_AddNumberToObject(reply, "id", id);
     cJSON_AddBoolToObject(reply, "ok", !error);
     if (error) cJSON_AddStringToObject(reply, "error", error);
-    else if(strcmp(op->valuestring,"get_catalog")) {
+    else if(!compact&&strcmp(op->valuestring,"get_catalog")) {
         xSemaphoreTake(s_lock, portMAX_DELAY);
         cJSON_AddStringToObject(reply, "product", "vibe-companion");
+        if(!strcmp(op->valuestring,"hello")){
+            cJSON *caps=cJSON_AddArrayToObject(reply,"capabilities");
+            cJSON_AddItemToArray(caps,cJSON_CreateString("storage_v1"));cJSON_AddItemToArray(caps,cJSON_CreateString("usb_media_v1"));
+        }
         cJSON_AddStringToObject(reply,"alpha_format","vaf1");
         if(pruned>=0)cJSON_AddNumberToObject(reply,"cache_files_removed",pruned);
         task_counts_t counts=effective_counts(esp_timer_get_time());
