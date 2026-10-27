@@ -47,10 +47,12 @@ with zipfile.ZipFile(windows,'w',zipfile.ZIP_DEFLATED) as archive:
         archive.write(root/'web'/name,'web/'+name)
     archive.write(root/'package.json','package.json')
     archive.write(root/'tests/run-tests.cjs','tests/run-tests.cjs')
-    for name in ('test_host.py','test_multitask.py','test_realtime.py','test_failover.py','test_history_observer.py','test_ui_approval.py','test_management_queue.py','test_usb_media.py','test_local_management.py','test_web.cjs','test_alpha.cjs','test_gif_frames.cjs','test_storage.cjs','test_upload_failure.cjs','test_task_dots.cjs','test_cleanup.cjs','test_media_storage.cjs','test_media_storage.c'):
+    for name in ('test_host.py','test_multitask.py','test_realtime.py','test_failover.py','test_history_observer.py','test_ui_approval.py','test_management_queue.py','test_usb_media.py','test_local_management.py','test_web.cjs','test_alpha.cjs','test_gif_frames.cjs','test_storage.cjs','test_upload_failure.cjs','test_task_dots.cjs','test_cleanup.cjs','test_media_storage.cjs','test_media_storage.c','test_render_memory.cjs','test_render_memory.c'):
         archive.write(root/'tests/companion'/name,'tests/companion/'+name)
-    for name in ('media_storage.c','media_storage.h'):
+    for name in ('media_storage.c','media_storage.h','legacy_assets.h'):
         archive.write(root/'main/storage'/name,'main/storage/'+name)
+    for name in ('frame_transform.h','animation_cache.c','animation_cache.h','animation_crc.h','jpeg_decode.c','display_init.h','companion_render.c','companion_render.h','alpha_cache.h','task_dots.h','lamp_effects.h'):
+        archive.write(root/'main/display'/name,'main/display/'+name)
     archive.write(root/'docs/usb-management.md','docs/usb-management.md')
     for name in ('使用说明与Codex配置.md','LICENSE','THIRD_PARTY_NOTICES.md','CHANGELOG.md'):archive.write(root/name,name)
     archive.write(root/'distribution/先读我_快速开始.md','先读我_快速开始.md')

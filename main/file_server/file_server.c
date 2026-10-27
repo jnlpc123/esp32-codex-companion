@@ -64,7 +64,7 @@ static esp_err_t serve(httpd_req_t *req)
     else if (!strcmp(req->uri, "/companion.js")) { start = _binary_vibe_js_start; end = _binary_vibe_js_end; type = "application/javascript"; }
     else if (!strcmp(req->uri, "/vendor/gifuct.js")) { start = _binary_vibe_gif_start; end = _binary_vibe_gif_end; type = "application/javascript"; }
     else if (!strcmp(req->uri, "/alpha-codec.js")) { start = _binary_vibe_alpha_start; end = _binary_vibe_alpha_end; type = "application/javascript"; }
-    if (start) { httpd_resp_set_type(req, type); httpd_resp_set_hdr(req, "Cache-Control", "no-cache"); return httpd_resp_send(req, (const char *)start, end - start); }
+    if (start) { httpd_resp_set_type(req, type); httpd_resp_set_hdr(req, "Cache-Control", "no-cache"); httpd_resp_set_hdr(req,"Content-Encoding","gzip"); return httpd_resp_send(req, (const char *)start, end - start); }
     if (!strncmp(req->uri, "/api/", 5) || !strncmp(req->uri, "/audio", 6) || !strncmp(req->uri, "/display", 8))
         return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "This interface is not part of companion firmware");
     const char *name = req->uri + 1;

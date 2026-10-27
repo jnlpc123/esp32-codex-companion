@@ -1,6 +1,6 @@
 # Companion 协议 v1
 
-固件测试版本1.1.0-rc.1；协议字段 `v` 保持1。
+固件测试版本1.1.0-rc.2；协议字段 `v` 保持1。
 
 ## 传输
 
@@ -60,6 +60,8 @@ USB 上传：import_begin(directory=v加8位十六进制)→token；file_begin(t
 
 详细计数中工作/等待/完成取0–9999；有完成记录时 `completion_seq` 为正数。通知由桥接去抖合并，重复通知ID不会重放；重连同步不重放旧通知。
 
+状态额外返回 `frame_indexes`（当前帧序号）、`base_backgrounds`（未调制的语义颜色）及 `backgrounds`（实际灯效颜色）。系统信息增加 `minimum_free_heap`、`largest_free_block`、`animation_stack_free_min`、本次启动的 `legacy_reclaimed_files/bytes`。精确遗留资源回收不含未知文件或用户素材。
+
 ## 配置
 
 `config` 操作中的 `config` 对象可部分更新，其他设置保留。成功后写入NVS；不替换用户素材存储。
@@ -74,6 +76,10 @@ USB 上传：import_begin(directory=v加8位十六进制)→token；file_begin(t
 | layout | traffic / all |
 | idle_playback | off / colors / black |
 | idle_done_delay | -1–300秒；-1等待完成确认，0立即，默认10 |
+| effects_enabled / effects_linked | 布尔值；灯效默认关闭，同相默认开启 |
+| effect | blink / double / breathe / chase |
+| effect_period | 800–6000 毫秒，默认1600 |
+| animation_link | independent / sync / stagger；默认独立 |
 | media | 3个设备目录路径，格式 `/data/...` |
 | scope | mode为all/project/session，target为对应ID；all使用空字符串 |
 

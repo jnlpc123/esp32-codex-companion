@@ -33,6 +33,9 @@ static char s_notice_ids[3][17];
 static const char *s_last_tone = "none";
 static const char *names[] = {"idle", "working", "waiting", "done"};
 static const char *idle_names[] = {"off", "colors", "black"};
+static const char *effect_names[]={"blink","double","breathe","chase"};
+static const char *link_names[]={"independent","sync","stagger"};
+static int64_t s_animation_epoch;
 static bool s_idle_playing;
 static int64_t s_idle_since_us;
 static uint32_t s_idle_completion_seq;
@@ -91,6 +94,11 @@ static cJSON *config_json(const companion_config_t *c)
     cJSON_AddStringToObject(o, "layout", c->all_screens ? "all" : "traffic");
     cJSON_AddStringToObject(o, "idle_playback", idle_names[c->idle_playback]);
     cJSON_AddNumberToObject(o, "idle_done_delay", c->idle_done_delay);
+    cJSON_AddBoolToObject(o,"effects_enabled",c->effects_enabled);
+    cJSON_AddBoolToObject(o,"effects_linked",c->effects_linked);
+    cJSON_AddStringToObject(o,"effect",effect_names[c->effect]);
+    cJSON_AddNumberToObject(o,"effect_period",c->effect_period);
+    cJSON_AddStringToObject(o,"animation_link",link_names[c->animation_link]);
     cJSON *a = cJSON_AddArrayToObject(o, "media");
     for (int i = 0; i < 3; i++) cJSON_AddItemToArray(a, cJSON_CreateString(c->media[i]));
     return o;
@@ -120,7 +128,28 @@ static bool parse_config(cJSON *o, companion_config_t *c)
     if (!cJSON_IsObject(o) || !integer_field(o, "volume", 0, 80, &c->volume) ||
         !integer_field(o, "foreground_size", 80, 144, &c->foreground_size) ||
         !integer_field(o, "brightness", 5, 100, &c->brightness) ||
-        !integer_field(o, "idle_done_delay", -1, 300, &c->idle_done_delay)) return false;
+        !integer_field(o, "idle_done_delay", -1, 300, &c->idle_done_delay) ||
+        !integer_field(o,"effect_period",800,6000,&c->effect_period)) return false;
+    const char *bool_keys[]={"effects_enabled","effects_linked"};
+    bool *bool_values[]={&c->effects_enabled,&c->effects_linked};
+    for(int i=0;i<2;i++){
+        cJSON *v=cJSON_GetObjectItemCaseSensitive(o,bool_keys[i]);
+        if(v){if(!cJSON_IsBool(v))return false;*bool_values[i]=cJSON_IsTrue(v);}
+    }
+    cJSON *effect=cJSON_GetObjectItemCaseSensitive(o,"effect");
+    if(effect){
+        int mode=-1;if(!cJSON_IsString(effect))return false;
+        for(int i=0;i<4;i++)if(!strcmp(effect->valuestring,effect_names[i]))mode=i;
+        if(mode<0)return false;
+        c->effect=(light_effect_t)mode;
+    }
+    cJSON *link=cJSON_GetObjectItemCaseSensitive(o,"animation_link");
+    if(link){
+        int mode=-1;if(!cJSON_IsString(link))return false;
+        for(int i=0;i<3;i++)if(!strcmp(link->valuestring,link_names[i]))mode=i;
+        if(mode<0)return false;
+        c->animation_link=(animation_link_t)mode;
+    }
     cJSON *idle=cJSON_GetObjectItemCaseSensitive(o,"idle_playback");
     if(idle){
         if(!cJSON_IsString(idle))return false;
@@ -166,7 +195,8 @@ esp_err_t companion_init(void)
     s_config_lock = xSemaphoreCreateMutex();
     if (!s_lock || !s_config_lock) return ESP_ERR_NO_MEM;
     s_config = (companion_config_t){.volume=40, .foreground_size=112, .brightness=60, .colors={0xf800,0xffe0,0x07e0},
-        .media={"/data/1", "/data/2_cleaned", "/data/3_cleaned"},.idle_playback=IDLE_PLAYBACK_BLACK,.idle_done_delay=10};
+        .media={"/data/1", "/data/2_cleaned", "/data/3_cleaned"},.idle_playback=IDLE_PLAYBACK_BLACK,.idle_done_delay=10,
+        .effects_linked=true,.effect=LIGHT_BREATHE,.effect_period=1600};
     esp_err_t ret = nvs_open("companion", NVS_READWRITE, &s_nvs);
     if (ret != ESP_OK) return ret;
     s_boot_id=esp_random();
@@ -225,7 +255,14 @@ void companion_get_visual(int channel, companion_visual_t *v)
         v->count=0;v->active=true;
     }
     v->foreground_size = s_config.foreground_size;
-    v->revision = s_revision;
+    v->base_background=v->background;
+    unsigned level=8;
+    if(s_config.effects_enabled&&v->active&&v->background)
+        level=light_effect_level(s_config.effect,(uint64_t)now/1000,s_config.effect_period,channel-1,s_config.effects_linked);
+    v->background=light_effect_color(v->background,level);
+    v->revision = s_revision*9+level;
+    v->animation_link=s_config.animation_link;
+    v->animation_time_us=(uint64_t)(now-s_animation_epoch);
     xSemaphoreGive(s_lock);
 }
 
@@ -265,7 +302,9 @@ static esp_err_t update_config(cJSON *o, bool activate, const char **error)
     }
     cJSON_Delete(saved);
     if (ret == ESP_OK) {
-        xSemaphoreTake(s_lock, portMAX_DELAY); s_config = next; s_revision++; xSemaphoreGive(s_lock);
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        if(next.animation_link!=before.animation_link)s_animation_epoch=esp_timer_get_time();
+        s_config = next; s_revision++; xSemaphoreGive(s_lock);
         storage_note_change();
         notify_tone_settings(next.volume, next.muted);
         display_set_brightness(next.brightness);
@@ -481,9 +520,12 @@ esp_err_t companion_handle_json(const char *input, bool usb, char *output, size_
         cJSON_AddStringToObject(reply, "wifi_ip", ip);
         cJSON *frames = cJSON_AddArrayToObject(reply, "frames");
         for (int i = 1; i <= 3; i++) cJSON_AddItemToArray(frames, cJSON_CreateNumber(anim_rendered_frames(i)));
+        cJSON *indexes=cJSON_AddArrayToObject(reply,"frame_indexes");
+        for(int i=1;i<=3;i++)cJSON_AddItemToArray(indexes,cJSON_CreateNumber(anim_current_frame(i)));
         cJSON *colors = cJSON_AddArrayToObject(reply, "backgrounds");
+        cJSON *base_colors=cJSON_AddArrayToObject(reply,"base_backgrounds");
         cJSON *active = cJSON_AddArrayToObject(reply, "active");
-        for (int i = 1; i <= 3; i++) { companion_visual_t visual; companion_get_visual(i, &visual); cJSON_AddItemToArray(colors, cJSON_CreateNumber(visual.background)); cJSON_AddItemToArray(active,cJSON_CreateBool(visual.active)); }
+        for (int i = 1; i <= 3; i++) { companion_visual_t visual; companion_get_visual(i, &visual); cJSON_AddItemToArray(colors, cJSON_CreateNumber(visual.background)); cJSON_AddItemToArray(base_colors,cJSON_CreateNumber(visual.base_background)); cJSON_AddItemToArray(active,cJSON_CreateBool(visual.active)); }
         if(have_frame) {
             cJSON *frame=cJSON_AddObjectToObject(reply,"frame");
             cJSON_AddNumberToObject(frame,"width",frame_info.width);cJSON_AddNumberToObject(frame,"height",frame_info.height);

@@ -222,9 +222,9 @@ async function init(){
    const count=(status.counts||{})[role]||0,active=status.idle_playing||count>0;
    const lamp=card.querySelector('.lamp'),bg=status.backgrounds?.[i]??0x0841;
    card.classList.toggle('active',active);lamp.classList.toggle('inactive',!active);lamp.style.background=hex565(bg);
-   const dots=card.querySelector('.task-dots');dots.replaceChildren();dots.style.color=hex565(dotColor565(bg));
+   const dots=card.querySelector('.task-dots');dots.replaceChildren();dots.style.color=hex565(dotColor565(status.base_backgrounds?.[i]??bg));
    for(const position of taskDotLayout(status.idle_playing?0:count)){const dot=document.createElement('i');if(position.hollow)dot.className='overflow';dot.style.setProperty('--rise',String(144-position.y));dots.append(dot);}
-   let label=card.querySelector('.task-count');if(!label){label=document.createElement('p');label.className='task-count';lamp.after(label);}label.textContent=status.idle_playing?'空闲动画 · 彩色播放':count+' 个任务'+(active?' · 彩色播放':' · 灰度暂停');
+   let label=card.querySelector('.task-count');if(!label){label=document.createElement('p');label.className='task-count';lamp.after(label);}label.textContent=status.idle_playing?'空闲播放':count+' 个任务'+(active?'':' · 暂停');
    const dir=status.config.media[i];const image=card.querySelector('img');
    if(dir&&image.dataset.dir!==dir){
     image.dataset.dir=dir;const preview=dir.replace(/^\/data/,'')+'/_preview.png';let retries=0;
@@ -240,6 +240,9 @@ async function init(){
   if(fill||!initialized){$('layout').value=status.config.layout;$('foregroundSize').value=status.config.foreground_size;$('brightness').value=status.config.brightness;$('volume').value=status.config.volume;$('muted').checked=status.config.muted;outputs();}
   if(fill||!initialized){
    $('idlePlayback').value=status.config.idle_playback||'off';
+   $('effectsEnabled').checked=!!status.config.effects_enabled;$('effectsLinked').checked=status.config.effects_linked!==false;
+   $('effect').value=status.config.effect||'breathe';$('effectPeriod').value=status.config.effect_period||1600;
+   $('animationLink').value=status.config.animation_link||'independent';effectControls();
    const select=$('idleDoneDelay'),delay=String(status.config.idle_done_delay??10);
    if(!Array.from(select.options).some(option=>option.value===delay)){const option=document.createElement('option');option.value=delay;option.textContent='红灯保留 '+delay+' 秒';select.append(option);}
    select.value=delay;
@@ -259,6 +262,8 @@ async function init(){
   try{show(await request('/api/companion'));}catch{$('usbBadge').textContent='设备网页连接中断';}
   if(!document.hidden)pollTimer=setTimeout(poll,1500);
  }
+ function effectControls(){const enabled=$('effectsEnabled').checked;$('effect').disabled=$('effectPeriod').disabled=!enabled;$('effectsLinked').disabled=!enabled||$('effect').value==='chase';$('effectPeriodValue').textContent=(Number($('effectPeriod').value)/1000).toFixed(1)+' 秒';}
+ for(const id of ['effectsEnabled','effect','effectPeriod'])$(id).addEventListener('input',effectControls);
  for(const id of ['foregroundSize','brightness','volume'])$(id).addEventListener('input',outputs);
  document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTimeout(pollTimer);else poll();});
  cards.forEach((card,index)=>{
@@ -278,20 +283,20 @@ async function init(){
     const random=new Uint32Array(1);crypto.getRandomValues(random);const directory='v'+random[0].toString(16).padStart(8,'0');
     const device=latest.device_id;
     const result=await uploadSequence({frames,preview:frames[0].preview,channel:index+1,directory,request:(path,body)=>request(path,body,device),onProgress:(n,total)=>{bar.value=25+n/total*75;message.textContent=`保存到设备 ${n}/${total}，请保持页面开启`;}});
-    show(result,true);message.textContent=`已保存 ${frames.length} 帧，正在准备播放；下次开机会自动恢复。`;
+    show(result,true);message.textContent=`已保存 ${frames.length} 帧`;
     await storage();
    }catch(error){message.classList.add('error');message.textContent='导入未完成：'+error.message+'。未确认前不会替换原素材。';}
    finally{bar.hidden=true;input.value='';busy=false;document.querySelectorAll('.import,.use-existing').forEach(b=>{b.disabled=false;});}
   });
   card.querySelector('.use-existing').addEventListener('click',async()=>{
    if(!latest||busy)return;
-   try{const media=latest.config.media.slice();media[index]=card.querySelector('.existing-dir').value.trim();show(await request('/api/companion',JSON.stringify({v:1,op:'config',config:{media}})),true);message.textContent='已保存，开机自动载入此目录。';}
+   try{const media=latest.config.media.slice();media[index]=card.querySelector('.existing-dir').value.trim();show(await request('/api/companion',JSON.stringify({v:1,op:'config',config:{media}})),true);message.textContent='已保存';}
    catch(error){message.classList.add('error');message.textContent=error.message;}
   });
  });
  $('settingsForm').addEventListener('submit',async e=>{
   e.preventDefault();if(busy)return;if(!initialized||!latest){toast('请等待设备连接');return;}const button=e.submitter;button.disabled=true;$('settingsMessage').classList.remove('error');
-  try{show(await request('/api/companion',JSON.stringify({v:1,op:'config',config:{colors:['colorDone','colorWaiting','colorWorking'].map(id=>pack565($(id).value)),scope:{mode:$('scopeMode').value,target:$('scopeTarget').value},layout:$('layout').value,idle_playback:$('idlePlayback').value,idle_done_delay:Number($('idleDoneDelay').value),foreground_size:Number($('foregroundSize').value),brightness:Number($('brightness').value),volume:Number($('volume').value),muted:$('muted').checked}})),true);$('settingsMessage').textContent='已保存';}
+  try{show(await request('/api/companion',JSON.stringify({v:1,op:'config',config:{colors:['colorDone','colorWaiting','colorWorking'].map(id=>pack565($(id).value)),scope:{mode:$('scopeMode').value,target:$('scopeTarget').value},layout:$('layout').value,effects_enabled:$('effectsEnabled').checked,effects_linked:$('effectsLinked').checked,effect:$('effect').value,effect_period:Number($('effectPeriod').value),animation_link:$('animationLink').value,idle_playback:$('idlePlayback').value,idle_done_delay:Number($('idleDoneDelay').value),foreground_size:Number($('foregroundSize').value),brightness:Number($('brightness').value),volume:Number($('volume').value),muted:$('muted').checked}})),true);$('settingsMessage').textContent='已保存';}
   catch(error){$('settingsMessage').classList.add('error');$('settingsMessage').textContent=error.message;}
   finally{button.disabled=false;}
  });
@@ -313,7 +318,7 @@ async function init(){
     report=await request('/api/companion',JSON.stringify({v:1,op:'storage_info'}));
     if(report.pending){if(Date.now()>deadline)throw new Error('存储统计超时，请重试');await new Promise(resolve=>setTimeout(resolve,80));}
    }while(report.pending);const r=report.storage;
-   if(r)$('storageBreakdown').textContent=`当前素材 ${Math.round(r.current_media_bytes/1024)} KiB · 其他素材 ${Math.round(r.other_media_bytes/1024)} KiB · 播放缓存 ${Math.round(r.cache_bytes/1024)} KiB · 系统及其他 ${Math.round(r.system_unknown_bytes/1024)} KiB（文件大小，不含文件系统开销）`;
+   if(r)$('storageBreakdown').textContent=`当前素材 ${Math.round(r.current_media_bytes/1024)} KiB · 其他素材 ${Math.round(r.other_media_bytes/1024)} KiB · 播放缓存 ${Math.round(r.cache_bytes/1024)} KiB · 系统及其他 ${Math.round(r.system_unknown_bytes/1024)} KiB`;
   }catch(e){$('storageBreakdown').textContent=e.message;}
  }catch(e){$('storageInfo').textContent=e.message;}}
  if(location.hostname==='127.0.0.1'||location.hostname==='localhost'){

@@ -34,7 +34,9 @@ static void usb_task(void *unused)
 
 esp_err_t companion_usb_start(void)
 {
-    usb_serial_jtag_driver_config_t config = {.tx_buffer_size=4096, .rx_buffer_size=4096};
+    // Replies are <=2048 bytes and writes drain concurrently to the USB FIFO.
+    // Keep the RX burst margin for uploads without reserving a second TX reply.
+    usb_serial_jtag_driver_config_t config = {.tx_buffer_size=2048, .rx_buffer_size=4096};
     esp_err_t ret = usb_serial_jtag_driver_install(&config);
     if (ret != ESP_OK) return ret;
     if (xTaskCreate(usb_task, "vibe_usb", 12288, NULL, 6, NULL) != pdPASS) {

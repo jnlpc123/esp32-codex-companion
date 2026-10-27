@@ -62,6 +62,7 @@ void app_main(void)
     ESP_ERROR_CHECK(anim_playback_init() == pdPASS ? ESP_OK : ESP_FAIL);
     companion_restore_media();
     ESP_ERROR_CHECK(companion_usb_start());
+    storage_reclaim_legacy_assets();
     // Queueing restore is not enough: Wi-Fi RF initialization can delay flash
     // reads. Let the first three composed frames reach the panels beforehand.
     int64_t first_frame_deadline = esp_timer_get_time() + 5000000;

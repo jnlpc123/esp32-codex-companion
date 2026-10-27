@@ -1,5 +1,7 @@
 #include "storage_service.h"
+#include "legacy_assets.h"
 #include "companion.h"
+#include "app_tasks.h"
 #include "animation_crc.h"
 #include "esp_app_desc.h"
 #include "esp_chip_info.h"
@@ -10,6 +12,7 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -34,6 +37,7 @@ static size_t s_written,s_length;
 static uint32_t s_crc,s_expected_crc;
 static int64_t s_last_access;
 static atomic_uint s_revision;
+static unsigned s_legacy_files,s_legacy_bytes;
 static volatile bool s_maintenance;
 static SemaphoreHandle_t s_report_lock;
 static cJSON *s_report;
@@ -48,6 +52,24 @@ static bool storage_command_sync(const cJSON *o,cJSON *r,const char **error);
 static void storage_io_task(void *unused);
 static const char *begin_import(const char *dir,cJSON *reply);
 static bool file_path(const char *name,char full[80]);
+void storage_reclaim_legacy_assets(void)
+{
+    for(size_t i=0;i<sizeof(legacy_assets)/sizeof(*legacy_assets);i++){
+        if(!storage_service_lock())return;
+        const legacy_asset_t *asset=&legacy_assets[i];char path[64];
+        snprintf(path,sizeof(path),"/data/%s",asset->name);
+        struct stat st;
+        if(!stat(path,&st)&&(size_t)st.st_size==asset->bytes){
+            FILE *f=fopen(path,"rb");uint32_t crc=0;size_t size=0,n;uint8_t block[512];bool valid=false;
+            if(f){
+                while((n=fread(block,1,sizeof(block),f))){crc=animation_crc32_le(crc,block,n);size+=n;}
+                valid=!ferror(f)&&size==asset->bytes&&crc==asset->crc;fclose(f);
+            }
+            if(valid&&unlink(path)==0){s_legacy_files++;s_legacy_bytes+=size;storage_note_change();}
+        }
+        storage_service_unlock();vTaskDelay(1);
+    }
+}
 static bool upload_room(size_t length)
 {
     size_t total,used;
@@ -177,6 +199,11 @@ esp_err_t storage_system_json(cJSON *r)
     cJSON_AddNumberToObject(r,"chip_revision",chip.revision);cJSON_AddNumberToObject(r,"chip_cores",chip.cores);
     cJSON_AddNumberToObject(r,"cpu_freq_hz",esp_clk_cpu_freq());cJSON_AddNumberToObject(r,"flash_size_mb",flash/1048576);
     cJSON_AddNumberToObject(r,"free_heap",esp_get_free_heap_size());
+    cJSON_AddNumberToObject(r,"legacy_reclaimed_files",s_legacy_files);
+    cJSON_AddNumberToObject(r,"legacy_reclaimed_bytes",s_legacy_bytes);
+    cJSON_AddNumberToObject(r,"minimum_free_heap",esp_get_minimum_free_heap_size());
+    cJSON_AddNumberToObject(r,"largest_free_block",heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    cJSON_AddNumberToObject(r,"animation_stack_free_min",anim_stack_free_min());
     cJSON_AddNumberToObject(r,"spiffs_total",total);cJSON_AddNumberToObject(r,"spiffs_used",used);cJSON_AddNumberToObject(r,"spiffs_free",total-used);
     const esp_partition_t *p=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_SPIFFS,NULL);
     if(p){cJSON_AddNumberToObject(r,"storage_offset",p->address);cJSON_AddNumberToObject(r,"storage_partition_bytes",p->size);

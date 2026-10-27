@@ -25,7 +25,9 @@
 #define ANIM_MAX_FILES 256
 #define ANIM_CHANNELS 3
 static QueueHandle_t s_anim_cmd_queue;
+static TaskHandle_t s_anim_task;
 static volatile uint32_t s_total_frames[3];
+static volatile int s_current_frames[3]={-1,-1,-1};
 static SemaphoreHandle_t s_gc_lock;
 static volatile bool s_gc_requested;
 static volatile int s_gc_result;
@@ -41,6 +43,7 @@ typedef struct {
     int count, index;
     uint16_t delays[ANIM_MAX_FILES];
     int64_t due_us, stats_us, remaining_us;
+    uint64_t duration_us;
     bool has_frame, last_active;
     int current_index;
     unsigned rendered;
@@ -211,7 +214,7 @@ static bool anim_load_channel(anim_channel_state_t *state, const char *dir_path,
     for (int i = 0; i < file_count; i++) {
         if (is_alpha_file(file_list[i])) { cached++; continue; }
         char cache_path[64];
-        if (animation_cache_prepare(file_list[i], cache_path, sizeof(cache_path))) {
+        if (companion_render_prepare_cache(file_list[i], cache_path, sizeof(cache_path))) {
             char *replacement = strdup(cache_path);
             if (replacement) { free(file_list[i]); file_list[i] = replacement; cached++; }
         }
@@ -223,6 +226,7 @@ static bool anim_load_channel(anim_channel_state_t *state, const char *dir_path,
     state->count = file_count;
     strlcpy(state->source_dir,dir_path,sizeof(state->source_dir));
     memcpy(state->delays, frame_delays, sizeof(frame_delays));
+    for(int i=0;i<file_count;i++)state->duration_us+=(uint64_t)frame_delays[i]*1000;
     state->due_us = state->stats_us = esp_timer_get_time();
     return true;
 }
@@ -238,7 +242,9 @@ BaseType_t anim_playback_init(void)
     anim_task_ctx_t *ctx = malloc(sizeof(*ctx));
     if (!ctx) { vQueueDelete(s_anim_cmd_queue); s_anim_cmd_queue = NULL; return pdFAIL; }
     ctx->cmd_queue = s_anim_cmd_queue;
-    if (xTaskCreate(AnimTask, "anim", 4096, ctx, 5, NULL) != pdPASS) {
+    // JPEG preparation includes the decoder and SPIFFS write/verification path.
+    // Keep stack headroom for that path as well as ordinary cached playback.
+    if (xTaskCreate(AnimTask, "anim", 6144, ctx, 5, &s_anim_task) != pdPASS) {
         free(ctx); vQueueDelete(s_anim_cmd_queue); s_anim_cmd_queue = NULL; return pdFAIL;
     }
     ESP_LOGI(TAG, "[anim] three-screen playback subsystem initialized");
@@ -307,6 +313,8 @@ void AnimTask(void *pvParameters)
         companion_tick();
         int selected = -1;
         int64_t now = esp_timer_get_time();
+        uint64_t cycle=0;
+        for(int i=0;i<ANIM_CHANNELS;i++)if(states[i].duration_us>cycle)cycle=states[i].duration_us;
         for (int i = 0; i < ANIM_CHANNELS; i++) {
             int ch = (cursor + i) % ANIM_CHANNELS;
             companion_visual_t visual;
@@ -316,7 +324,11 @@ void AnimTask(void *pvParameters)
                 else states[ch].due_us=now+states[ch].remaining_us;
                 states[ch].last_active=visual.active;
             }
-            if (revisions[ch] != visual.revision || (visual.active && states[ch].count && states[ch].due_us <= now)) { selected = ch; break; }
+            bool due=states[ch].due_us<=now;
+            if(visual.animation_link&&states[ch].count)
+                due=!states[ch].has_frame||states[ch].current_index!=(int)animation_link_frame(states[ch].delays,states[ch].count,
+                    states[ch].duration_us,cycle,visual.animation_time_us,visual.animation_link,ch);
+            if (revisions[ch] != visual.revision || (visual.active && states[ch].count && due)) { selected = ch; break; }
         }
         if (selected < 0) { vTaskDelay(1); continue; }
         anim_channel_state_t *state = &states[selected];
@@ -327,9 +339,14 @@ void AnimTask(void *pvParameters)
         companion_get_visual(selected + 1, &visual);
         bool scheduled = !state->has_frame || (visual.active && state->due_us <= started);
         int frame_index = scheduled?state->index:state->current_index;
+        if(visual.active&&visual.animation_link&&state->count){
+            frame_index=animation_link_frame(state->delays,state->count,state->duration_us,cycle,
+                visual.animation_time_us,visual.animation_link,selected);
+            scheduled=!state->has_frame||frame_index!=state->current_index;
+        }
         esp_err_t result = companion_render_frame(selected + 1, state->count ? state->files[frame_index] : NULL);
         revisions[selected] = visual.revision;
-        if (result == ESP_OK) s_total_frames[selected]++;
+        if (result == ESP_OK) {s_total_frames[selected]++;s_current_frames[selected]=state->count?frame_index:-1;}
         if (result == ESP_OK) state->rendered++;
         else ESP_LOGW(TAG, "[anim] ch=%d frame=%d: %s", selected + 1, state->index, esp_err_to_name(result));
         int64_t interval_us = (int64_t)(state->count ? state->delays[frame_index] : 33) * 1000;
@@ -363,6 +380,8 @@ uint32_t anim_rendered_frames(int channel)
 {
     return channel >= 1 && channel <= 3 ? s_total_frames[channel - 1] : 0;
 }
+int anim_current_frame(int channel){return channel>=1&&channel<=3?s_current_frames[channel-1]:-1;}
+unsigned anim_stack_free_min(void){return s_anim_task?uxTaskGetStackHighWaterMark(s_anim_task):0;}
 
 bool anim_can_accept(int count)
 {

@@ -1,4 +1,5 @@
 #include "media_storage.h"
+#include "legacy_assets.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -22,6 +23,15 @@ static bool live(void *context,const char *name)
 {(void)context;return !strcmp(name,".anim_0123abcd.r5");}
 int main(void)
 {
+    uint32_t crc;
+    for(size_t i=0;i<sizeof(legacy_assets)/sizeof(*legacy_assets);i++){
+        const legacy_asset_t *a=&legacy_assets[i];assert(legacy_asset_expected(a->name,a->bytes,&crc)&&crc==a->crc);
+        assert(!legacy_asset_expected(a->name,a->bytes+1,&crc));
+        char path[80];snprintf(path,sizeof(path),"v0123abcd/%s",a->name);assert(!legacy_asset_expected(path,a->bytes,&crc));
+        snprintf(path,sizeof(path),"/%s",a->name);assert(!legacy_asset_expected(path,a->bytes,&crc));
+    }
+    assert(!legacy_asset_expected("config.json",176,&crc));
+    assert(!legacy_asset_expected("my-image.jpg",6578,&crc));
     assert(media_storage_reliable_free(2583041,1947509,2818048)==166027);
     assert(media_storage_reliable_free(2583041,2041885,2818048)==71651);
     assert(media_storage_reliable_free(1000,1100,1200)==0);

@@ -5,6 +5,7 @@
 #include "media_storage.h"
 
 esp_err_t storage_service_init(void);
+void storage_reclaim_legacy_assets(void);
 bool storage_service_lock(void);
 void storage_service_unlock(void);
 bool storage_import_busy(void); // Caller holds service lock.
