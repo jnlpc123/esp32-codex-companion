@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Wi-Fi 配网 · Codex 伴侣</title><link rel="stylesheet" href="/companion.css"><script defer src="/network.js"></script><script defer src="/wifi.js"></script></head>
+<body class="network-page"><main class="network-shell">
+<header><a class="brand" href="/">CODEX <span>COMPANION</span></a><a id="backToManagement" href="/" hidden>返回管理页</a></header>
+<section class="network-intro"><h1 id="networkTitle">连接 Wi-Fi</h1><p id="networkHint">连接一个 2.4 GHz 网络，之后通过设备 IP 进入管理页面。</p></section>
+<div id="wifiStatus" class="network-status" role="status">正在读取设备网络状态…</div>
+<section id="wifiResult" class="network-result" hidden aria-labelledby="resultTitle"><h2 id="resultTitle">已连接并保存</h2><p id="resultHint"></p><a id="managementLink" class="button-link" href="/">进入管理页面</a><p id="addressLine" class="hint"></p></section>
+<form id="wifiForm"><div class="form-grid"><label for="ssid">网络名称<input id="ssid" maxlength="32" autocomplete="off" placeholder="输入 Wi-Fi 名称" required></label><label for="wifiPassword">密码<div class="password-field"><input id="wifiPassword" type="password" maxlength="64" autocomplete="new-password" placeholder="开放网络可留空"><button id="showPassword" type="button" class="secondary" aria-pressed="false" aria-controls="wifiPassword">显示</button></div></label></div>
+<p class="hint">支持 2.4 GHz 网络。名称需与路由器中的名称完全一致。</p><button id="wifiConnect" type="submit" disabled>连接并保存</button><p id="wifiMessage" class="message" role="status" aria-live="polite"></p></form>
+<section class="offline-option"><h2>暂时没有 Wi-Fi？</h2><p id="offlineHint">可以先离线使用，之后从管理页的“网络设置”继续配网。</p><button id="skipWifi" class="secondary" type="button" disabled>暂不配网，离线使用</button><label class="check"><input id="wifiIgnore" type="checkbox" disabled>忽略设备配网提示</label><p class="hint">该选项重启后保留，不会清除已有网络。</p></section>
+<footer><span>Codex Companion</span><a href="https://github.com/jnlpc123/esp32-codex-companion#readme" target="_blank" rel="noopener">使用说明</a></footer>
+</main></body></html>

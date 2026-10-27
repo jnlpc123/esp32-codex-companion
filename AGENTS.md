@@ -5,7 +5,7 @@ ESP32-C3三屏Codex伴侣，ESP-IDF（已验证6.1）、C、原生HTML/JS、Wind
 - `main/companion`：协议、任务计数、设置及提示音。
 - `main/display`、`main/core`：透明缓存、绘制及动画调度。
 - `main/storage`、`main/file_server`：素材事务与存储保护。
-- `web`：五项嵌入式管理资源，不运行旧前端打包脚本。
+- `web`：管理与配网的嵌入式资源，不运行旧前端打包脚本。
 - `companion_host`：非策略Hook、桥接及只读Windows检测器。
 
 构建使用 `idf.py build`；默认终端未必已导出IDF环境。回归使用 `npm test`（需要Node、Python3及GCC/Clang或Zig，不需要npm依赖；Windows可设置ZIG为zig.exe路径）。硬件脚本需先暂停桥接释放串口，不能通过泛化unittest发现直接运行所有设备脚本。

@@ -22,3 +22,5 @@ typedef struct {uint32_t id;bool pending;int mode,result;size_t free_before,free
 bool anim_cleanup_available(void);
 uint32_t anim_clear_media_start(int mode);
 bool anim_cleanup_get(uint32_t id,anim_cleanup_status_t *result);
+
+unsigned anim_network_prompt(void);

@@ -7,7 +7,7 @@ const headers={
  'esp_lcd_panel_ops.h':'#pragma once\n#include <stdbool.h>\n#include "esp_err.h"\ntypedef void *esp_lcd_panel_handle_t;\n',
  'config.h':'#pragma once\n#define DISPLAY_WIDTH 160\n#define DISPLAY_HEIGHT 160\n',
  'storage_service.h':'#pragma once\nvoid storage_note_change(void);\n',
- 'companion.h':'#pragma once\n#include <stdint.h>\n#include <stdbool.h>\ntypedef struct {uint16_t background;int foreground_size;uint32_t revision;int count;bool active;uint16_t base_background;} companion_visual_t;\nvoid companion_get_visual(int,companion_visual_t *);\n',
+ 'companion.h':'#pragma once\n#include <stdint.h>\n#include <stdbool.h>\ntypedef struct {uint16_t background;int foreground_size;uint32_t revision;int count;bool active;} companion_visual_t;\nvoid companion_get_visual(int,companion_visual_t *);\n',
  'esp_spiffs.h':'#pragma once\n#include <stddef.h>\n#include "esp_err.h"\nesp_err_t esp_spiffs_info(const char *,size_t *,size_t *);\n',
  'esp_timer.h':'#pragma once\n#include <stdint.h>\nint64_t esp_timer_get_time(void);\n',
  'esp_system.h':'#pragma once\nunsigned esp_get_free_heap_size(void);\n',

@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse,gzip
 
 ASSETS={'index.html':'vibe_index','companion.css':'vibe_css','companion.js':'vibe_js',
+        'wifi.html':'vibe_wifi','wifi.js':'vibe_wifi_js','network.js':'vibe_network_js',
         'vendor/gifuct.js':'vibe_gif','alpha-codec.js':'vibe_alpha'}
 def compress(source,destination):
     destination.mkdir(parents=True,exist_ok=True)

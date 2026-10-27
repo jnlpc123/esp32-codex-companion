@@ -88,3 +88,8 @@ THE SOFTWARE.
 
 Source: https://github.com/pyserial/pyserial/tree/v3.5
 License: BSD-3-Clause; full text: companion_host/vendor/pyserial-LICENSE.txt.
+
+
+## 原版配网提示图
+
+`main/wifi/assets/ap-mode.jpg`、`wifi-connecting.jpg`、`wifi-connected.jpg` 原样恢复自陈沛林的 ESP32C3 多功能交互显示系统固件资源。保留原项目署名与 MIT 许可；来源：https://gitee.com/pei_lin_chen/esp32c3duogongnengxinhao 。硬件设计资料与许可另见 README 中的原开源硬件项目链接。

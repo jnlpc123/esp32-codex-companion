@@ -4,7 +4,7 @@ idf_component_register(SRCS
     "../tests/companion/alpha_cache_selftest.c"
     "settings/settings.c" "storage/mount.c" "storage/fast_read.c" "storage/media_storage.c" "storage/storage_service.c"
     "core/app_tasks.c" "companion/companion.c" "companion/task_status.c" "companion/usb_link.c" "companion/notify_tone.c"
-    "audio/es8311.c" "wifi/wifi_manager.c" "wifi/captive_portal.c" "dns_server/dns_server.c"
+    "audio/es8311.c" "wifi/wifi_manager.c" "wifi/wifi_provision.c" "wifi/wifi_credentials.c" "wifi/wifi_control.c" "wifi/wifi_prompt_assets.c" "wifi/captive_portal.c" "dns_server/dns_server.c"
     "file_server/file_server.c" "file_server/import_transaction.c" "file_server/file_server_wifi.c" "file_server/file_server_sysinfo.c"
     INCLUDE_DIRS "." "core" "display" "wifi" "file_server" "settings" "storage" "audio" "dns_server" "companion"
     PRIV_REQUIRES esp_app_format esp_hw_support spi_flash esp_partition esp_lcd_gc9a01 esp_lcd_panel_io_additions
@@ -25,6 +25,7 @@ set(web_dir "${CMAKE_CURRENT_SOURCE_DIR}/../web")
 set(web_gzip "${CMAKE_CURRENT_BINARY_DIR}/web_gzip")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${web_dir}/index.html" "${web_dir}/companion.css" "${web_dir}/companion.js"
+    "${web_dir}/wifi.html" "${web_dir}/wifi.js" "${web_dir}/network.js"
     "${web_dir}/vendor/gifuct.js" "${web_dir}/alpha-codec.js"
     "${CMAKE_CURRENT_SOURCE_DIR}/../tools/compress_web.py")
 execute_process(COMMAND "${PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/compress_web.py" "${web_dir}" "${web_gzip}"
@@ -37,3 +38,12 @@ target_add_binary_data(${COMPONENT_LIB} "${web_gzip}/vibe_css.gz" BINARY RENAME_
 target_add_binary_data(${COMPONENT_LIB} "${web_gzip}/vibe_js.gz" BINARY RENAME_TO vibe_js)
 target_add_binary_data(${COMPONENT_LIB} "${web_gzip}/vibe_gif.gz" BINARY RENAME_TO vibe_gif)
 target_add_binary_data(${COMPONENT_LIB} "${web_gzip}/vibe_alpha.gz" BINARY RENAME_TO vibe_alpha)
+
+# Original author provisioning images live in app flash, never user SPIFFS.
+target_add_binary_data(${COMPONENT_LIB} "wifi/assets/ap-mode.jpg" BINARY RENAME_TO wifi_ap)
+target_add_binary_data(${COMPONENT_LIB} "wifi/assets/wifi-connecting.jpg" BINARY RENAME_TO wifi_connecting)
+target_add_binary_data(${COMPONENT_LIB} "wifi/assets/wifi-connected.jpg" BINARY RENAME_TO wifi_connected)
+
+target_add_binary_data(${COMPONENT_LIB} "${web_gzip}/vibe_wifi.gz" BINARY RENAME_TO vibe_wifi)
+target_add_binary_data(${COMPONENT_LIB} "${web_gzip}/vibe_wifi_js.gz" BINARY RENAME_TO vibe_wifi_js)
+target_add_binary_data(${COMPONENT_LIB} "${web_gzip}/vibe_network_js.gz" BINARY RENAME_TO vibe_network_js)

@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include "esp_err.h"
 #include "task_status.h"
-#include "lamp_effects.h"
+#include "animation_timing.h"
 
 typedef enum { VIBE_IDLE, VIBE_WORKING, VIBE_WAITING, VIBE_DONE } vibe_state_t;
 typedef enum { IDLE_PLAYBACK_OFF, IDLE_PLAYBACK_COLORS, IDLE_PLAYBACK_BLACK } idle_playback_t;
@@ -16,9 +16,6 @@ typedef struct {
     int colors[3];
     idle_playback_t idle_playback;
     int idle_done_delay;
-    bool effects_enabled, effects_linked;
-    light_effect_t effect;
-    int effect_period;
     animation_link_t animation_link;
 } companion_config_t;
 typedef struct {
@@ -27,7 +24,6 @@ typedef struct {
     uint32_t revision;
     int count;
     bool active;
-    uint16_t base_background;
     animation_link_t animation_link;
     uint64_t animation_time_us;
 } companion_visual_t;

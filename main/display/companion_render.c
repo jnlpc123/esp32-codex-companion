@@ -6,6 +6,7 @@
 #include "config.h"
 #include "task_dots.h"
 #include "frame_transform.h"
+#include <jpeg_decoder.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
@@ -13,7 +14,6 @@
 static uint16_t *s_canvas;
 static uint32_t s_revision[3];
 static uint16_t s_background[3];
-static uint16_t s_dot_background[3];
 #define CANVAS_PIXELS (DISPLAY_WIDTH*DISPLAY_HEIGHT)
 #define FOREGROUND_PIXELS (132*132)
 #define FOOTER_PIXELS (TASK_DOT_FOOTER_WIDTH*TASK_DOT_FOOTER_HEIGHT)
@@ -28,7 +28,7 @@ static esp_err_t footer(int channel,companion_visual_t v)
         int cx,cy;task_dot_center(v.count,i,&cx,&cy);cx-=44;cy-=134;
         for(int y=-TASK_DOT_RADIUS;y<=TASK_DOT_RADIUS;y++)for(int x=-TASK_DOT_RADIUS;x<=TASK_DOT_RADIUS;x++){
             int d=x*x+y*y;
-            if(d<=25&&(!(v.count>5&&i==4)||d>=9))s_footer[(y+cy)*TASK_DOT_FOOTER_WIDTH+cx+x]=__builtin_bswap16(task_dot_color(v.base_background));
+            if(d<=25&&(!(v.count>5&&i==4)||d>=9))s_footer[(y+cy)*TASK_DOT_FOOTER_WIDTH+cx+x]=__builtin_bswap16(task_dot_color(v.background));
         }
     }
     return display_draw_bitmap_sync(get_display_panel(channel),44,134,116,150,s_footer);
@@ -43,6 +43,20 @@ esp_err_t companion_render_init(void)
 
 bool companion_render_prepare_cache(const char *jpeg_path,char *cache_path,size_t path_size)
 {return animation_cache_prepare_into(jpeg_path,cache_path,path_size,s_canvas,CANVAS_PIXELS);}
+
+esp_err_t companion_render_prompt(int channel,const uint8_t *jpeg,size_t size)
+{
+    if(!s_canvas||channel<1||channel>3||!jpeg||!size||size>65536)return ESP_ERR_INVALID_ARG;
+    s_revision[channel-1]=0;
+    esp_jpeg_image_cfg_t cfg={.indata=(uint8_t*)jpeg,.indata_size=size,.outbuf=(uint8_t*)s_canvas,
+        .outbuf_size=CANVAS_PIXELS*2,.out_format=JPEG_IMAGE_FORMAT_RGB565,.out_scale=JPEG_IMAGE_SCALE_0,.flags={.swap_color_bytes=1}};
+    esp_jpeg_image_output_t image;
+    esp_err_t ret=esp_jpeg_decode(&cfg,&image);
+    if(ret!=ESP_OK)return ret;
+    if(image.width!=DISPLAY_WIDTH||image.height!=DISPLAY_HEIGHT)return ESP_ERR_INVALID_SIZE;
+    if(!frame_rotate(s_canvas,CANVAS_PIXELS,DISPLAY_WIDTH,DISPLAY_HEIGHT,display_get_rotation()))return ESP_FAIL;
+    return display_draw_bitmap_sync(get_display_panel(channel),0,0,DISPLAY_WIDTH,DISPLAY_HEIGHT,s_canvas);
+}
 
 static esp_err_t background(int channel, uint16_t color, bool preserve_foreground)
 {
@@ -70,9 +84,9 @@ esp_err_t companion_render_frame(int channel, const char *path)
         s_background[index]=visual.background;s_size[index]=visual.foreground_size;
         s_width[index] = s_height[index] = 0;
     }
-    if(cleared||s_dots[index]!=visual.count||s_dot_background[index]!=visual.base_background){
+    if(cleared||s_dots[index]!=visual.count){
         esp_err_t ret=footer(channel,visual);if(ret!=ESP_OK)return ret;
-        s_dots[index]=visual.count;s_dot_background[index]=visual.base_background;
+        s_dots[index]=visual.count;
     }
     s_revision[index]=visual.revision;
     if (!path) return ESP_OK;

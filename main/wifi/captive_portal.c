@@ -122,12 +122,16 @@ void start_ap_dns_only(void) {
 
 void stop_captive_portal(void) {
   ESP_LOGI(TAG, "Stopping Captive Portal...");
+  if(s_ap_netif){
+    esp_err_t ret=esp_wifi_set_mode(WIFI_MODE_STA);
+    if(ret!=ESP_OK){ESP_LOGW(TAG,"Could not close SoftAP: %s",esp_err_to_name(ret));return;}
+  }
   if (s_dns_server) {
     stop_dns_server(s_dns_server);
     s_dns_server = NULL;
   }
   if (s_ap_netif) {
-    esp_netif_destroy(s_ap_netif);
+    esp_netif_destroy_default_wifi(s_ap_netif);
     s_ap_netif = NULL;
   }
   ESP_LOGI(TAG, "Captive Portal stopped");

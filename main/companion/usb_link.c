@@ -19,6 +19,7 @@ static void usb_task(void *unused)
                 if (!overflow && used) {
                     line[used] = 0;
                     companion_handle_json(line, true, reply, sizeof(reply));
+                    volatile char *clear=line;for(size_t j=0;j<used;j++)clear[j]=0;
                     usb_serial_jtag_write_bytes("VIBE ", 5, pdMS_TO_TICKS(100));
                     usb_serial_jtag_write_bytes(reply, strlen(reply), pdMS_TO_TICKS(100));
                     usb_serial_jtag_write_bytes("\n", 1, pdMS_TO_TICKS(100));
