@@ -1,6 +1,6 @@
 # 三屏 Codex 编程信号灯：使用说明与换电脑配置
 
-版本：1.2.0-rc.2 · 2026-10-27，ESP32-C3 三屏伴侣候选固件。适用于当前已改造的同款硬件。
+版本：1.2.0 · 2026-10-27，ESP32-C3 三屏伴侣正式固件。适用于当前已改造的同款硬件。
 
 新版 USB 后台：桥接启动后打开 `http://127.0.0.1:17831/`，无需设备 Wi-Fi 即可管理素材与设置。两个清理按钮的范围、恢复限制、断线处理及端口配置见 [USB 后台与存储管理](docs/usb-management.md)。旧的 Wi-Fi 后台继续保留。
 
@@ -91,7 +91,7 @@ Windows桌面精确检测模式下，已完成会话在Codex前台显示约1秒�
 
 ### 3.1 解压到固定位置
 
-将 `codex-companion-v1.2.0-rc.2-windows.zip` 完整解压到固定位置，例如 `C:\CodexCompanion`。以下命令在 **PowerShell** 中执行，安装包根目录应直接包含 `companion_host` 文件夹：
+将 `codex-companion-v1.2.0-windows.zip` 完整解压到固定位置，例如 `C:\CodexCompanion`。以下命令在 **PowerShell** 中执行，安装包根目录应直接包含 `companion_host` 文件夹：
 
 ```powershell
 Set-Location "C:\CodexCompanion"
@@ -312,7 +312,7 @@ python .\companion_host\bridge.py --stop    # 临时退出，下次 Hook 仍可�
 
 停用：先 `--pause`，再在 Codex `/hooks` 中禁用仅带 `--vibe-companion` 的条目。确认不再使用后可移除这些条目和程序目录，保留其他 Hooks。不要用整份旧配置覆盖当前配置来卸载。
 
-同一块已安装设备换电脑无需刷机。发行页中的 `codex-companion-v1.2.0-rc.2-esp32c3.bin` 仅供同款、已有兼容 bootloader/分区表的设备应用更新，偏移 `0x10000`；不是空白芯片的完整量产包。不要整片擦除或覆盖 NVS/SPIFFS，以免丢失设置/素材。裸板初次烧录需另行准备匹配的完整固件布局。
+同一块已安装设备换电脑无需刷机。发行页中的 `codex-companion-v1.2.0-esp32c3.bin` 仅供同款、已有兼容 bootloader/分区表的设备应用更新，偏移 `0x10000`；不是空白芯片的完整量产包。不要整片擦除或覆盖 NVS/SPIFFS，以免丢失设置/素材。裸板初次烧录需另行准备匹配的完整固件布局。
 
 ## 9. 版本与验证依据
 

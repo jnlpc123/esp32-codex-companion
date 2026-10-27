@@ -61,7 +61,7 @@ with zipfile.ZipFile(windows,'w',zipfile.ZIP_DEFLATED) as archive:
     for name in ('companion.c','companion.h','task_status.c','task_status.h'):archive.write(root/'main/companion'/name,'main/companion/'+name)
     for name in ('cJSON.c','cJSON.h','LICENSE'):archive.write(root/'components/cjson'/name,'components/cjson/'+name)
     archive.write(root/'docs/usb-management.md','docs/usb-management.md')
-    for name in ('network-page-1.2.0-rc.2.md','usb-wifi-1.2.0-rc.1.md','release-1.1.0.md','effects-memory-1.1.0-rc.2.md','usb-storage-1.1.0-rc.1.md','cleanup-acceptance-2026-10-27.md'):
+    for name in ('release-1.2.0.md','network-page-1.2.0-rc.2.md','usb-wifi-1.2.0-rc.1.md','release-1.1.0.md','effects-memory-1.1.0-rc.2.md','usb-storage-1.1.0-rc.1.md','cleanup-acceptance-2026-10-27.md'):
         archive.write(root/'docs/validation'/name,'docs/validation/'+name)
     for name in ('使用说明与Codex配置.md','LICENSE','THIRD_PARTY_NOTICES.md','CHANGELOG.md'):archive.write(root/name,name)
     archive.write(root/'distribution/先读我_快速开始.md','先读我_快速开始.md')
