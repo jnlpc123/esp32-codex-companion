@@ -17,6 +17,8 @@ from companion_host.process_observer import ApprovalProcessObserver
 from companion_host.history_observer import NativeHistoryObserver
 from companion_host.ui_approval import UIApprovalObserver
 from companion_host.transport import UsbProtocol, HttpProtocol, FailoverLink
+from companion_host.management_queue import ManagementQueue
+from companion_host.management_server import ManagementServer
 
 DATA = Path(os.environ.get('VIBE_COMPANION_DATA', str(HERE / 'runtime')))
 
@@ -128,6 +130,9 @@ def run():
                 if reply.get('product') != 'vibe-companion':
                     raise ValueError('Port is not a companion device')
                 remember(reply)
+                protocol.device_id=reply['device_id']
+                protocol.capabilities=reply.get('capabilities',[])
+                protocol.boot_id=reply.get('boot_id')
                 return protocol
             except (OSError, ValueError, TimeoutError):
                 if candidate:
@@ -153,6 +158,12 @@ def run():
         return None
 
     link = FailoverLink(connect_usb, connect_wifi)
+    management=ManagementQueue();management_error='';server=None
+    try:
+        server=ManagementServer(management,HERE.parent/'web',port=int(config.get('management_port',17831)))
+        server.start()
+    except (OSError,ValueError) as exc:
+        management_error=str(exc);server=None;logging.warning('Local management unavailable: %s',exc)
     last_ack=None;last_catalog=None;last_delivery_ms=0
     try:
         while not (DATA / 'stop').exists() and not (DATA / 'paused').exists():
@@ -200,6 +211,11 @@ def run():
                         last_catalog=catalog_key
                     except (OSError,ValueError,TimeoutError) as exc:
                         link.error=str(exc);link.close()
+            device=getattr(link.peer,'device_id','') if link.kind=='usb' else ''
+            capabilities=getattr(link.peer,'capabilities',[]) if link.kind=='usb' else []
+            management.set_device(device,link.kind,capabilities,boot_id=getattr(link.peer,'boot_id',None))
+            feedback=management.process_one(link.peer,device,link.kind)
+            if feedback and 'config' in feedback:link.reply=feedback
             if now >= next_status:
                 status = dict(state=state, connected=link.peer is not None, transport=link.kind,
                               port=link.peer.port.port if link.kind == 'usb' else None, last_error=link.error,
@@ -208,12 +224,17 @@ def run():
                 status.update(ui_observer.status if ui_observer else dict(approval_source='hooks'))
                 status.update(permission_process_matches=observer.matches,history_corrections=history_observer.matches,pending_approvals=sum(len(s.approval_calls) for s in engine.sessions.values()),last_delivery_ms=round(last_delivery_ms,1),loop_ms=round((time.monotonic()-now)*1000,1))
                 status['wifi_ip'] = hello.get('wifi_ip') or learned.get('wifi_ip', '')
+                status.update(device_id=device,management_url=server.url if server else '',
+                              management_available=bool(server and device and 'storage_v1' in capabilities),
+                              management_error=management_error)
                 temporary = DATA / 'status.tmp'
                 temporary.write_text(json.dumps(status), encoding='utf8')
                 os.replace(temporary, DATA / 'status.json')
                 next_status = now + 1
-            time.sleep(.08)
+            time.sleep(.005 if management.pending else .08)
     finally:
+        management.set_device('','none',[])
+        if server:server.stop()
         if ui_observer:ui_observer.close()
         if link.peer:
             try:

@@ -138,6 +138,9 @@ class UsbProtocol:
             if not isinstance(reply, dict) or reply.get('id') != request_id:
                 continue
             if not reply.get('ok'):
-                raise ValueError(reply.get('error', 'Device rejected command'))
+                detail=reply.get('error', 'Device rejected command')
+                if isinstance(reply.get('errno'),int):detail+=f" (errno {reply['errno']})"
+                raise ValueError(detail)
+            if isinstance(reply.get('boot_id'),int):self.boot_id=reply['boot_id']
             return reply
         raise TimeoutError('Companion USB acknowledgement timed out')

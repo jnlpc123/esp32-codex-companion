@@ -1,6 +1,6 @@
 # Companion 协议 v1
 
-固件发行版本1.0.0；协议字段 `v` 保持1。
+固件测试版本1.1.0-rc.2；协议字段 `v` 保持1。
 
 ## 传输
 
@@ -18,7 +18,7 @@ USB 原生 Serial/JTAG，115200波特率，UTF-8单行JSON；响应为 `VIBE ` �
 
 | op | 用途 |
 | --- | --- |
-| hello / get / ping | 读取状态；USB读操作也保持心跳 |
+| hello / get / ping | 读取状态；仅 ping 续租，hello/get 不续租 |
 | state | USB同步；HTTP临时状态测试 |
 | sync | HTTP电脑同步与续租 |
 | config | 合并并保存配置 |
@@ -27,6 +27,30 @@ USB 原生 Serial/JTAG，115200波特率，UTF-8单行JSON；响应为 `VIBE ` �
 | tone | 合成提示音，kind为waiting/done |
 | prune_cache | 串行清理未使用派生缓存，保留素材和当前播放文件 |
 | catalog / get_catalog | 写入/读取项目及会话目录 |
+| sysinfo / storage_info / storage_list | USB 系统信息、异步空间分类、文件分页 |
+| clear_media / cleanup_status | 确认清理范围后启动任务、轮询结果 |
+| import_begin / import_commit / import_abort | USB 素材目录事务 |
+| file_begin / file_chunk / file_status / file_end / file_read | 有界 USB 文件读写，详见下节 |
+
+## 1.1 USB 管理
+
+`hello.capabilities` 声明 `storage_v1`、`usb_media_v1`、`storage_async_v1`；旧固件不应接受新上传。状态 `state/sync/ping` 按规定续租，管理操作不续租。
+
+USB 的 import_begin/commit/abort、file_begin/chunk/end 返回 pending:true 和 storage_job，客户端以 storage_job_status(job_token=storage_job) 每 20ms 查询至完成；状态查询不持有串口，也不重发写请求。每次仅一个 I/O 任务，完成结果保留至下一次写任务；未知或重启失效 token 拒绝。电脑桥接在管理线程中轮询，串口所有者每次只处理一条请求。后台垃圾回收耗时不会阻塞串口状态命令。旧 HTTP 导入路径保持原行为。
+
+sysinfo 额外返回 spiffs_reliable_free、spiffs_upload_budget：以分区约 75% 利用范围作保守估算，并预留 128 KiB。它们不是剩余 Flash 的替代计量或写入成功保证。网页和设备都在写入前检查；名义剩余空间大于预算时仍可能拒绝导入，不自动删除用户素材。
+
+`storage_info` 首次返回 `pending:true`，80ms 后重试，建议总超时 8 秒；扫描在独立任务执行，修订号变化则拒绝不一致结果。完成返回 `storage.categories` 六类：current/uploaded/incomplete/cache/legacy_named/unknown。文件逻辑字节数不等于 SPIFFS 分配占用。
+
+`storage_list` 请求 `cursor`（初始 0）与 `limit`（1–8）；返回 files、next_cursor、complete、revision。扫描期间 revision 变化须从头刷新。
+
+`clear_media` 范围与确认值：unused/DELETE_UNUSED_MEDIA、all/DELETE_ALL_MEDIA、cache/DELETE_UNUSED_CACHE。返回 cleanup 对象（job_id、pending 及统计）；以 `cleanup_status` 的 job_id 轮询。删除部分失败会返回错误和已处理统计，不宣称全部成功。all 先持久化空选择，再由动画线程分批停止并清理。未知文件、根配置、Wi-Fi 和非媒体设置均保留；cache 只删除未使用派生缓存。
+
+USB 上传：import_begin(directory=v加8位十六进制)→token；file_begin(token,name,length,crc32)→file_token；file_chunk(file_token,offset,data=Base64,crc32)；file_end(file_token)；activate 沿用原操作；import_commit(token)。失败用 import_abort(token)。只允许白名单文件名、单事务、单文件≤256 KiB、每块≤768 原始字节；完整请求/响应≤2048字节。重复相同块/结束可重试，冲突重复、坏 CRC、乱序与跨目录写拒绝。file_status 返回已收 offset；file_end 校验全文件 CRC。重启后重新开始，不支持跨重启续传。
+
+`file_read` 请求 path=/data/目录/文件、offset、size≤768；返回 length、offset、data、eof。禁止读取根配置或电脑文件。
+
+电脑端默认 `http://127.0.0.1:17831/`，只监听 IPv4 loopback。`GET /api/local` 返回当前设备、boot_id、能力与本次启动 token。写操作带 X-Vibe-Key、X-Vibe-Device，Host 与 Origin/Referer 必须同源。上传 token/请求绑定设备与启动代次，换板不转移写入；后台不将管理请求转发到设备 Wi-Fi。状态同步的原 Wi-Fi 备用保留。可在 companion_host/config.json 设置 management_port（端口冲突会报告，不终止状态桥接）。
 
 状态使用 `idle` / `working` / `waiting` / `done`。详细多任务计数应与状态一致，优先级等待、工作、完成、空闲。
 
@@ -35,6 +59,8 @@ USB 原生 Serial/JTAG，115200波特率，UTF-8单行JSON；响应为 `VIBE ` �
 ```
 
 详细计数中工作/等待/完成取0–9999；有完成记录时 `completion_seq` 为正数。通知由桥接去抖合并，重复通知ID不会重放；重连同步不重放旧通知。
+
+状态额外返回 `frame_indexes`（当前帧序号）、`base_backgrounds`（未调制的语义颜色）及 `backgrounds`（实际灯效颜色）。系统信息增加 `minimum_free_heap`、`largest_free_block`、`animation_stack_free_min`、本次启动的 `legacy_reclaimed_files/bytes`。精确遗留资源回收不含未知文件或用户素材。
 
 ## 配置
 
@@ -50,6 +76,10 @@ USB 原生 Serial/JTAG，115200波特率，UTF-8单行JSON；响应为 `VIBE ` �
 | layout | traffic / all |
 | idle_playback | off / colors / black |
 | idle_done_delay | -1–300秒；-1等待完成确认，0立即，默认10 |
+| effects_enabled / effects_linked | 布尔值；灯效默认关闭，同相默认开启 |
+| effect | blink / double / breathe / chase |
+| effect_period | 800–6000 毫秒，默认1600 |
+| animation_link | independent / sync / stagger；默认独立 |
 | media | 3个设备目录路径，格式 `/data/...` |
 | scope | mode为all/project/session，target为对应ID；all使用空字符串 |
 

@@ -23,7 +23,7 @@
 <progress max="100" value="0" hidden></progress><p class="upload-message" aria-live="polite"></p>
 <details><summary>选择已有素材</summary><label>目录<input class="existing-dir" placeholder="/data/3_cleaned" maxlength="47"></label><button class="use-existing secondary" type="button">使用此目录</button></details>
 </article></section>
-<section class="storage-settings"><h2>存储</h2><div class="actions"><button id="cleanStorage" class="secondary" type="button">清理内部空间</button><span id="storageInfo"></span></div><p id="storageMessage" class="message" role="status"></p></section>
+<section class="storage-settings"><h2>存储</h2><div class="actions"><button id="cleanStorage" class="secondary" type="button" title="保留当前三屏素材，删除其余上传素材">清除内存</button><button id="clearAllStorage" class="secondary danger" type="button" title="删除全部素材，包括当前展示内容">全部清除</button><span id="storageInfo"></span></div><p id="storageBreakdown" class="hint"></p><details id="storageDetails"><summary>素材占用</summary><ul id="storageInventory"></ul></details><p id="storageMessage" class="message" role="status"></p></section>
 <section class="settings"><h2>显示与提醒</h2><form id="settingsForm"><div class="form-grid">
 <label>状态范围<select id="scopeMode"><option value="all">全部任务</option><option value="project">指定项目</option><option value="session">指定会话</option></select></label>
 <label>项目 / 会话<select id="scopeTarget" disabled><option value="">全部任务</option></select></label>
@@ -31,12 +31,18 @@
 <label>信号灯模式<select id="layout"><option value="traffic">各屏独立</option><option value="all">三屏同步</option></select></label>
 <label>空闲动画<select id="idlePlayback"><option value="black">背景全黑</option><option value="colors">背景全亮</option><option value="off">关闭</option></select></label>
 <label>完成后进入动画<select id="idleDoneDelay"><option value="10">红灯保留 10 秒</option><option value="0">立即进入</option><option value="-1">确认完成后进入</option></select></label>
+<fieldset class="effects-settings"><legend>灯效与联动</legend>
+<label class="check"><input id="effectsEnabled" type="checkbox">启用背景灯效</label>
+<div class="form-grid"><label>灯效<select id="effect"><option value="blink">闪烁</option><option value="double">双闪</option><option value="breathe">呼吸</option><option value="chase">跑马灯</option></select></label>
+<label>周期 <output id="effectPeriodValue">1.6 秒</output><input id="effectPeriod" type="range" min="800" max="6000" step="200" value="1600"></label>
+<label class="check"><input id="effectsLinked" type="checkbox" checked>三屏灯效同步</label>
+<label>三屏动画<select id="animationLink"><option value="independent">独立播放</option><option value="sync">同步循环</option><option value="stagger">错峰循环</option></select></label></div></fieldset>
 <label>前景大小 <output id="foregroundValue">112 px</output><input id="foregroundSize" type="range" min="80" max="144" step="8" value="112"></label>
 <label>亮度 <output id="brightnessValue">60%</output><input id="brightness" type="range" min="5" max="100" value="60"></label>
 <label>音量 <output id="volumeValue">40%</output><input id="volume" type="range" min="0" max="80" value="40"></label>
 </div><label class="check"><input id="muted" type="checkbox">静音</label><p id="soundHint" class="hint"></p><div class="actions"><button type="submit">保存设置</button><button id="testDone" class="secondary" type="button">试听完成提示音</button><button id="testWaiting" class="secondary" type="button">试听等待提示音</button></div><p id="settingsMessage" class="message" role="status"></p></form></section>
 <details class="advanced"><summary>连接与诊断</summary><div class="advanced-content"><div class="actions"><button class="secondary state-test" data-state="working" type="button">测试绿灯</button><button class="secondary state-test" data-state="waiting" type="button">测试黄灯</button><button class="secondary state-test" data-state="done" type="button">测试红灯</button></div>
 <form id="wifiForm"><h3>Wi-Fi · 2.4 GHz</h3><div class="form-grid"><label>网络名称<input id="ssid" maxlength="32" autocomplete="off" required></label><label>密码<input id="wifiPassword" type="password" maxlength="64" autocomplete="new-password"></label></div><button type="submit" class="secondary">连接网络</button><p id="wifiMessage" class="message" role="status"></p></form><pre id="deviceInfo">读取中</pre></div></details>
-<footer><span>v1.0.0</span><a href="https://github.com/jnlpc123/esp32-codex-companion#readme" target="_blank" rel="noopener">使用说明</a></footer>
+<footer><span>v1.1.0-rc.2</span><a href="https://github.com/jnlpc123/esp32-codex-companion#readme" target="_blank" rel="noopener">使用说明</a></footer>
 <div id="globalMessage" class="global-message" role="status" hidden></div>
 </main></body></html>

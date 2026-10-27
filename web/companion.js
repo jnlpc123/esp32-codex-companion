@@ -13,10 +13,42 @@ function storageRequired(frames,preview){
  const allocation=size=>{const pages=Math.ceil(size/251);return (pages+1+Math.max(0,Math.ceil((pages-103)/124)))*256;};
  return frames.reduce((n,f)=>n+allocation(f.blob.size),0)+allocation(preview?.size||0)+allocation(timingText(frames).length)+131072;
 }
-async function request(path,body){
+function mediaGroups(files,selected){
+ const groups=new Map();
+ for(const file of files){
+  if(file.kind!==1)continue;
+  if(typeof file.name!=='string'||!Number.isSafeInteger(file.bytes)||file.bytes<0)throw Error('无效的素材清单');
+  const directory=file.name.replace(/^\//,'').split('/')[0];
+  if(!groups.has(directory))groups.set(directory,{directory,bytes:0,files:0,current:selected.includes('/data/'+directory)});
+  const group=groups.get(directory);group.bytes+=file.bytes;group.files++;
+ }
+ return [...groups.values()].sort((a,b)=>Number(b.current)-Number(a.current)||a.directory.localeCompare(b.directory));
+}
+function storageSummary(info){
+ return `总量 ${(info.spiffs_total/1048576).toFixed(2)} MiB · 已用 ${Math.round(info.spiffs_used/1024)} KiB · 剩余 ${Math.round(info.spiffs_free/1024)} KiB`;
+}
+async function finishCleanup(result,send){
+ const deadline=Date.now()+45000;
+ while(result.cleanup?.pending){
+  if(Date.now()>deadline)throw Error('清理仍在进行，请稍后查看存储，不要重复提交');
+  await new Promise(resolve=>setTimeout(resolve,80));
+  result=await send('/api/companion',JSON.stringify({v:1,op:'cleanup_status',job_id:result.cleanup.job_id}));
+ }
+ return result;
+}
+async function clearMedia(scope,{confirm:ask,send=request}){
+ if(scope!=='unused'&&scope!=='all')throw Error('无效的清理范围');
+ const text=scope==='all'?'删除全部已上传素材，包括三屏正在展示的素材？此操作无法撤销，Wi-Fi 和灯光设置将保留。':'删除其余全部已上传素材？当前三屏使用的完整素材将保留，此操作无法撤销。';
+ if(!ask(text))return null;
+ return finishCleanup(await send('/api/companion',JSON.stringify({v:1,op:'clear_media',scope,confirm:scope==='all'?'DELETE_ALL_MEDIA':'DELETE_UNUSED_MEDIA'})),send);
+}
+let localKey='',localDevice='';
+async function request(path,body,device=localDevice){
  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),120000);
  try{
-  const response=await fetch(path,{method:body===undefined?'GET':'POST',body,headers:typeof body==='string'?{'Content-Type':'application/json'}:{},signal:controller.signal,cache:'no-store'});
+  const headers=typeof body==='string'?{'Content-Type':'application/json'}:{};
+  if(localKey){headers['X-Vibe-Key']=localKey;if(body!==undefined)headers['X-Vibe-Device']=device;}
+  const response=await fetch(path,{method:body===undefined?'GET':'POST',body,headers,signal:controller.signal,cache:'no-store'});
   const raw=await response.text();
   let result;try{result=JSON.parse(raw);}catch{
    const detail=raw.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,200);
@@ -84,7 +116,7 @@ function taskDotLayout(count){
  const n=Math.min(5,Math.max(0,Math.floor(Number.isFinite(count)?count:0)));
  return Array.from({length:n},(_,index)=>{const dx=-(n-1)*7+index*14;return {x:80+dx,y:144-Math.floor((dx*dx+74)/148),radius:5,hollow:count>5&&index===4};});
 }
-const api={request,timingText,storageRequired,validDirectory,uploadSequence,gifFrames,dotColor565,taskDotLayout,...alpha};
+const api={request,clearMedia,storageSummary,mediaGroups,timingText,storageRequired,validDirectory,uploadSequence,gifFrames,dotColor565,taskDotLayout,...alpha};
 root.VibeImport=api;if(typeof module!=='undefined')module.exports=api;
 if(typeof document==='undefined')return;
 
@@ -128,15 +160,41 @@ async function init(){
  const colors={idle:'#e1e5db',working:'#22c55e',waiting:'#facc15',done:'#ef4444'};
  function toast(text){const el=$('globalMessage');el.textContent=text;el.hidden=false;setTimeout(()=>{el.hidden=true;},5000);}
  function outputs(){ $('foregroundValue').textContent=$('foregroundSize').value+' px';$('brightnessValue').textContent=$('brightness').value+'%';$('volumeValue').textContent=$('volume').value+'%';}
- $('cleanStorage').addEventListener('click',async()=>{
-  const button=$('cleanStorage');if(busy)return;button.disabled=true;
+ let inspectingStorage=false;
+ $('storageDetails').addEventListener('toggle',async()=>{
+  if(!$('storageDetails').open||inspectingStorage||busy||!latest)return;
+  inspectingStorage=true;$('storageInventory').textContent='读取中…';
   try{
-   const before=await request('/api/sysinfo');
-   const result=await request('/api/companion',JSON.stringify({v:1,op:'prune_cache'}));
-   const after=await request('/api/sysinfo');
-   $('storageMessage').textContent=`已清理 ${result.cache_files_removed} 个缓存，释放 ${Math.max(0,Math.round((after.spiffs_free-before.spiffs_free)/1024))} KB；素材已保留。`;
+   const files=[];let cursor=0,revision=null;
+   while(true){
+    const page=await request('/api/companion',JSON.stringify({v:1,op:'storage_list',cursor,limit:8}));
+    if(!Array.isArray(page.files)||(revision!==null&&revision!==page.revision))throw Error('存储已变化，请重新展开查看');
+    revision=page.revision;files.push(...page.files);
+    if(page.complete)break;
+    if(!Number.isInteger(page.next_cursor)||page.next_cursor<=cursor||files.length>4096)throw Error('素材清单无效');
+    cursor=page.next_cursor;
+   }
+   const list=$('storageInventory');list.replaceChildren();
+   for(const group of mediaGroups(files,latest.config.media)){
+    const row=document.createElement('li');row.textContent=`${group.directory} · ${Math.round(group.bytes/1024)} KiB · ${group.files} 个文件${group.current?' · 当前使用':''}`;list.append(row);
+   }
+   if(!list.children.length)list.textContent='没有已上传素材';
+  }catch(e){$('storageInventory').textContent=e.message;}finally{inspectingStorage=false;}
+ });
+ for(const [id,scope] of [['cleanStorage','unused'],['clearAllStorage','all']])$(id).addEventListener('click',async()=>{
+  if(busy||!initialized||!latest)return;
+  const device=latest.device_id;
+  if(!window.confirm(scope==='all'?'全部清除：包括正在展示的素材，无法撤销。确定继续？':'清除内存：保留当前三屏素材，删除其余全部已上传素材，无法撤销。确定继续？'))return;
+  busy=true;$('cleanStorage').disabled=$('clearAllStorage').disabled=true;
+  try{
+   const result=await clearMedia(scope,{confirm:()=>true,send:(path,body)=>request(path,body,device)});
+   const info=result.cleanup;
+   if(!info)throw Error('设备未返回清理结果，请检查后再操作');
+   show(await request('/api/companion'),true);
+   $('storageMessage').textContent=`已删除 ${info.files_removed} 个文件，释放 ${Math.max(0,Math.round((info.free_after-info.free_before)/1024))} KiB。`;
    await storage();
-  }catch(e){$('storageMessage').textContent=e.message;}finally{button.disabled=false;}
+  }catch(e){$('storageMessage').textContent=e.message;}
+  finally{busy=false;$('cleanStorage').disabled=$('clearAllStorage').disabled=false;}
  });
  function hex565(v){return '#'+[Math.round((v>>11)*255/31),Math.round(((v>>5)&63)*255/63),Math.round((v&31)*255/31)].map(x=>x.toString(16).padStart(2,'0')).join('');}
  function pack565(v){const n=parseInt(v.slice(1),16);return ((n>>19)<<11)|(((n>>10)&63)<<5)|((n>>3)&31);}
@@ -152,7 +210,7 @@ async function init(){
  $('scopeMode').addEventListener('change',()=>scopeOptions());
  $('ackDone').addEventListener('click',async()=>{try{show(await request('/api/companion',JSON.stringify({v:1,op:'ack'})));toast('已确认，等待电脑同步');}catch(e){toast(e.message);}});
  function show(status,fill=false){
-  latest=status;const state=stateLabels[status.state]?status.state:'idle';document.body.dataset.state=state;
+  latest=status;if(localKey)localDevice=status.device_id||'';const state=stateLabels[status.state]?status.state:'idle';document.body.dataset.state=state;
   $('stateLabel').textContent=status.idle_playing?'空闲动画':stateLabels[state];
   const source=status.transport||(status.usb_connected?'usb':'none');
   $('usbBadge').textContent=source==='usb'?'USB 已同步':source==='wifi'?'Wi-Fi 已同步':'等待电脑桥接';
@@ -164,17 +222,27 @@ async function init(){
    const count=(status.counts||{})[role]||0,active=status.idle_playing||count>0;
    const lamp=card.querySelector('.lamp'),bg=status.backgrounds?.[i]??0x0841;
    card.classList.toggle('active',active);lamp.classList.toggle('inactive',!active);lamp.style.background=hex565(bg);
-   const dots=card.querySelector('.task-dots');dots.replaceChildren();dots.style.color=hex565(dotColor565(bg));
+   const dots=card.querySelector('.task-dots');dots.replaceChildren();dots.style.color=hex565(dotColor565(status.base_backgrounds?.[i]??bg));
    for(const position of taskDotLayout(status.idle_playing?0:count)){const dot=document.createElement('i');if(position.hollow)dot.className='overflow';dot.style.setProperty('--rise',String(144-position.y));dots.append(dot);}
-   let label=card.querySelector('.task-count');if(!label){label=document.createElement('p');label.className='task-count';lamp.after(label);}label.textContent=status.idle_playing?'空闲动画 · 彩色播放':count+' 个任务'+(active?' · 彩色播放':' · 灰度暂停');
+   let label=card.querySelector('.task-count');if(!label){label=document.createElement('p');label.className='task-count';lamp.after(label);}label.textContent=status.idle_playing?'空闲播放':count+' 个任务'+(active?'':' · 暂停');
    const dir=status.config.media[i];const image=card.querySelector('img');
-   if(dir&&image.dataset.dir!==dir){image.dataset.dir=dir;image.src=dir.replace(/^\/data/,'')+'/_preview.png';image.hidden=false;image.onerror=()=>{if(!image.src.endsWith('/0001.jpg'))image.src=dir.replace(/^\/data/,'')+'/0001.jpg';else image.hidden=true;};}
-   if(!dir)image.hidden=true;
+   if(dir&&image.dataset.dir!==dir){
+    image.dataset.dir=dir;const preview=dir.replace(/^\/data/,'')+'/_preview.png';let retries=0;
+    image.hidden=false;image.onerror=()=>{
+     if(image.dataset.dir!==dir)return;
+     if(retries++<2){setTimeout(()=>{if(image.dataset.dir===dir)image.src=preview;},150);return;}
+     if(!image.src.endsWith('/0001.jpg'))image.src=dir.replace(/^\/data/,'')+'/0001.jpg';else image.hidden=true;
+    };image.src=preview;
+   }
+   if(!dir){image.hidden=true;delete image.dataset.dir;image.removeAttribute('src');}
    if(fill||!initialized)card.querySelector('.existing-dir').value=dir;
   });
   if(fill||!initialized){$('layout').value=status.config.layout;$('foregroundSize').value=status.config.foreground_size;$('brightness').value=status.config.brightness;$('volume').value=status.config.volume;$('muted').checked=status.config.muted;outputs();}
   if(fill||!initialized){
    $('idlePlayback').value=status.config.idle_playback||'off';
+   $('effectsEnabled').checked=!!status.config.effects_enabled;$('effectsLinked').checked=status.config.effects_linked!==false;
+   $('effect').value=status.config.effect||'breathe';$('effectPeriod').value=status.config.effect_period||1600;
+   $('animationLink').value=status.config.animation_link||'independent';effectControls();
    const select=$('idleDoneDelay'),delay=String(status.config.idle_done_delay??10);
    if(!Array.from(select.options).some(option=>option.value===delay)){const option=document.createElement('option');option.value=delay;option.textContent='红灯保留 '+delay+' 秒';select.append(option);}
    select.value=delay;
@@ -194,6 +262,8 @@ async function init(){
   try{show(await request('/api/companion'));}catch{$('usbBadge').textContent='设备网页连接中断';}
   if(!document.hidden)pollTimer=setTimeout(poll,1500);
  }
+ function effectControls(){const enabled=$('effectsEnabled').checked;$('effect').disabled=$('effectPeriod').disabled=!enabled;$('effectsLinked').disabled=!enabled||$('effect').value==='chase';$('effectPeriodValue').textContent=(Number($('effectPeriod').value)/1000).toFixed(1)+' 秒';}
+ for(const id of ['effectsEnabled','effect','effectPeriod'])$(id).addEventListener('input',effectControls);
  for(const id of ['foregroundSize','brightness','volume'])$(id).addEventListener('input',outputs);
  document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTimeout(pollTimer);else poll();});
  cards.forEach((card,index)=>{
@@ -208,24 +278,25 @@ async function init(){
     const frames=await decodeFile(file,(n,total)=>{message.textContent=`处理动图 ${n}/${total}`;bar.value=n/total*25;});
    const needed=storageRequired(frames,frames[0].preview);
    let info=await request('/api/sysinfo');
-   if(needed>info.spiffs_free){message.textContent='正在释放未使用的播放缓存…';await request('/api/companion',JSON.stringify({v:1,op:'prune_cache'}));info=await request('/api/sysinfo');}
-   if(needed>info.spiffs_free)throw Error(`空间不足：本次需约 ${Math.ceil(needed/1024)} KB（含安全余量），剩余 ${Math.floor(info.spiffs_free/1024)} KB。请使用更短的动图。`);
+   if(needed>(info.spiffs_reliable_free??info.spiffs_free)){message.textContent='正在释放未使用的播放缓存…';await finishCleanup(await request('/api/companion',JSON.stringify({v:1,op:'clear_media',scope:'cache',confirm:'DELETE_UNUSED_CACHE'})),request);info=await request('/api/sysinfo');}
+   if(needed>(info.spiffs_reliable_free??info.spiffs_free))throw Error(`可写空间不足：本次需约 ${Math.ceil(needed/1024)} KiB（含安全余量），写入余量约 ${Math.floor((info.spiffs_reliable_free??info.spiffs_free)/1024)} KiB。请先清除不用的素材，或使用更短的动图。`);
     const random=new Uint32Array(1);crypto.getRandomValues(random);const directory='v'+random[0].toString(16).padStart(8,'0');
-    const result=await uploadSequence({frames,preview:frames[0].preview,channel:index+1,directory,onProgress:(n,total)=>{bar.value=25+n/total*75;message.textContent=`保存到设备 ${n}/${total}，请保持页面开启`;}});
-    show(result,true);message.textContent=`已保存 ${frames.length} 帧，正在准备播放；下次开机会自动恢复。`;
+    const device=latest.device_id;
+    const result=await uploadSequence({frames,preview:frames[0].preview,channel:index+1,directory,request:(path,body)=>request(path,body,device),onProgress:(n,total)=>{bar.value=25+n/total*75;message.textContent=`保存到设备 ${n}/${total}，请保持页面开启`;}});
+    show(result,true);message.textContent=`已保存 ${frames.length} 帧`;
     await storage();
    }catch(error){message.classList.add('error');message.textContent='导入未完成：'+error.message+'。未确认前不会替换原素材。';}
    finally{bar.hidden=true;input.value='';busy=false;document.querySelectorAll('.import,.use-existing').forEach(b=>{b.disabled=false;});}
   });
   card.querySelector('.use-existing').addEventListener('click',async()=>{
    if(!latest||busy)return;
-   try{const media=latest.config.media.slice();media[index]=card.querySelector('.existing-dir').value.trim();show(await request('/api/companion',JSON.stringify({v:1,op:'config',config:{media}})),true);message.textContent='已保存，开机自动载入此目录。';}
+   try{const media=latest.config.media.slice();media[index]=card.querySelector('.existing-dir').value.trim();show(await request('/api/companion',JSON.stringify({v:1,op:'config',config:{media}})),true);message.textContent='已保存';}
    catch(error){message.classList.add('error');message.textContent=error.message;}
   });
  });
  $('settingsForm').addEventListener('submit',async e=>{
-  e.preventDefault();if(!initialized||!latest){toast('请等待设备连接');return;}const button=e.submitter;button.disabled=true;$('settingsMessage').classList.remove('error');
-  try{show(await request('/api/companion',JSON.stringify({v:1,op:'config',config:{colors:['colorDone','colorWaiting','colorWorking'].map(id=>pack565($(id).value)),scope:{mode:$('scopeMode').value,target:$('scopeTarget').value},layout:$('layout').value,idle_playback:$('idlePlayback').value,idle_done_delay:Number($('idleDoneDelay').value),foreground_size:Number($('foregroundSize').value),brightness:Number($('brightness').value),volume:Number($('volume').value),muted:$('muted').checked}})),true);$('settingsMessage').textContent='已保存';}
+  e.preventDefault();if(busy)return;if(!initialized||!latest){toast('请等待设备连接');return;}const button=e.submitter;button.disabled=true;$('settingsMessage').classList.remove('error');
+  try{show(await request('/api/companion',JSON.stringify({v:1,op:'config',config:{colors:['colorDone','colorWaiting','colorWorking'].map(id=>pack565($(id).value)),scope:{mode:$('scopeMode').value,target:$('scopeTarget').value},layout:$('layout').value,effects_enabled:$('effectsEnabled').checked,effects_linked:$('effectsLinked').checked,effect:$('effect').value,effect_period:Number($('effectPeriod').value),animation_link:$('animationLink').value,idle_playback:$('idlePlayback').value,idle_done_delay:Number($('idleDoneDelay').value),foreground_size:Number($('foregroundSize').value),brightness:Number($('brightness').value),volume:Number($('volume').value),muted:$('muted').checked}})),true);$('settingsMessage').textContent='已保存';}
   catch(error){$('settingsMessage').classList.add('error');$('settingsMessage').textContent=error.message;}
   finally{button.disabled=false;}
  });
@@ -240,7 +311,20 @@ async function init(){
   try{await request('/api/wifi/configure',JSON.stringify({ssid:$('ssid').value,password:$('wifiPassword').value}));$('wifiMessage').textContent='配置已提交。若地址改变，请使用 esp32.local 重新打开页面。';$('wifiPassword').value='';}
   catch(error){$('wifiMessage').textContent=error.message;}
  });
- async function storage(){try{const info=await request('/api/sysinfo');$('storageInfo').textContent='剩余空间 '+Math.round(info.spiffs_free/1024)+' KB';$('deviceInfo').textContent=`ESP32-C3 · ${Math.round(info.cpu_freq_hz/1000000)} MHz\n可用内存 ${Math.round(info.free_heap/1024)} KB · 固件 ${info.app_version}`;}catch{}}
+ async function storage(){try{
+  const info=await request('/api/sysinfo');$('storageInfo').textContent=storageSummary(info)+(Number.isFinite(info.spiffs_upload_budget)?` · 建议导入预算 ${Math.floor(info.spiffs_upload_budget/1024)} KiB`:'');
+  $('deviceInfo').textContent=`ESP32-C3 · ${Math.round(info.cpu_freq_hz/1000000)} MHz\n可用内存 ${Math.round(info.free_heap/1024)} KiB · 固件 ${info.app_version}`;
+  try{let report;const deadline=Date.now()+8000;do{
+    report=await request('/api/companion',JSON.stringify({v:1,op:'storage_info'}));
+    if(report.pending){if(Date.now()>deadline)throw new Error('存储统计超时，请重试');await new Promise(resolve=>setTimeout(resolve,80));}
+   }while(report.pending);const r=report.storage;
+   if(r)$('storageBreakdown').textContent=`当前素材 ${Math.round(r.current_media_bytes/1024)} KiB · 其他素材 ${Math.round(r.other_media_bytes/1024)} KiB · 播放缓存 ${Math.round(r.cache_bytes/1024)} KiB · 系统及其他 ${Math.round(r.system_unknown_bytes/1024)} KiB`;
+  }catch(e){$('storageBreakdown').textContent=e.message;}
+ }catch(e){$('storageInfo').textContent=e.message;}}
+ if(location.hostname==='127.0.0.1'||location.hostname==='localhost'){
+  try{const context=await request('/api/local');localKey=context.token;localDevice=context.device_id;$('wifiForm').hidden=true;}
+  catch(e){toast('本机后台初始化失败：'+e.message);return;}
+ }
  await poll();storage();
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();

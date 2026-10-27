@@ -32,6 +32,13 @@ spiffs_file __wrap_SPIFFS_open(spiffs *fs,const char *path,spiffs_flags flags,sp
 s32_t __real_SPIFFS_write(spiffs*,spiffs_file,void*,s32_t);
 s32_t __wrap_SPIFFS_write(spiffs *fs,spiffs_file fh,void *data,s32_t len)
 {mutation_begin();s32_t r=__real_SPIFFS_write(fs,fh,data,len);mutation_end();return r;}
+s32_t __real_SPIFFS_lseek(spiffs*,spiffs_file,s32_t,int);
+s32_t __wrap_SPIFFS_lseek(spiffs *fs,spiffs_file fh,s32_t offset,int whence)
+{
+    // Seeking a writable handle can flush cached pages and trigger GC.
+    // USB chunk retries and final CRC readback both seek the open upload.
+    mutation_begin();s32_t r=__real_SPIFFS_lseek(fs,fh,offset,whence);mutation_end();return r;
+}
 #define WRAP_HANDLE(name) \
 s32_t __real_##name(spiffs*,spiffs_file); \
 s32_t __wrap_##name(spiffs *fs,spiffs_file fh){mutation_begin();s32_t r=__real_##name(fs,fh);mutation_end();return r;}

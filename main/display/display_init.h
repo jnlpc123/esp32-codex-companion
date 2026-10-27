@@ -2,6 +2,9 @@
 #define DISPLAY_INIT_H
 
 #include <esp_lcd_panel_ops.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,6 +43,10 @@ esp_err_t display_jpeg_decode_file(const char *filepath,
                                     uint16_t **out_buf,
                                     uint16_t *out_width,
                                     uint16_t *out_height);
+
+// Decode directly into a reusable RGB565 canvas; capacity is in pixels.
+esp_err_t display_jpeg_decode_into(const char *filepath, uint16_t *pixels, size_t capacity,
+                                  uint16_t *width, uint16_t *height);
 
 #ifdef __cplusplus
 }
