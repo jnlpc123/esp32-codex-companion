@@ -54,6 +54,8 @@ with zipfile.ZipFile(windows,'w',zipfile.ZIP_DEFLATED) as archive:
     for name in ('frame_transform.h','animation_cache.c','animation_cache.h','animation_crc.h','jpeg_decode.c','display_init.h','companion_render.c','companion_render.h','alpha_cache.h','task_dots.h','lamp_effects.h'):
         archive.write(root/'main/display'/name,'main/display/'+name)
     archive.write(root/'docs/usb-management.md','docs/usb-management.md')
+    for name in ('release-1.1.0.md','effects-memory-1.1.0-rc.2.md','usb-storage-1.1.0-rc.1.md','cleanup-acceptance-2026-10-27.md'):
+        archive.write(root/'docs/validation'/name,'docs/validation/'+name)
     for name in ('使用说明与Codex配置.md','LICENSE','THIRD_PARTY_NOTICES.md','CHANGELOG.md'):archive.write(root/name,name)
     archive.write(root/'distribution/先读我_快速开始.md','先读我_快速开始.md')
     if args.guide_html:archive.write(args.guide_html,'使用说明与Codex配置.html')
