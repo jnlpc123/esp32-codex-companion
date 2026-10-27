@@ -1,6 +1,6 @@
 # Companion 协议 v1
 
-固件版本1.1.0；协议字段 `v` 保持1。
+固件版本1.2.0-rc.1；协议字段 `v` 保持1。
 
 ## 传输
 
@@ -60,7 +60,19 @@ USB 上传：import_begin(directory=v加8位十六进制)→token；file_begin(t
 
 详细计数中工作/等待/完成取0–9999；有完成记录时 `completion_seq` 为正数。通知由桥接去抖合并，重复通知ID不会重放；重连同步不重放旧通知。
 
-状态额外返回 `frame_indexes`（当前帧序号）、`base_backgrounds`（未调制的语义颜色）及 `backgrounds`（实际灯效颜色）。系统信息增加 `minimum_free_heap`、`largest_free_block`、`animation_stack_free_min`、本次启动的 `legacy_reclaimed_files/bytes`。精确遗留资源回收不含未知文件或用户素材。
+状态额外返回 `frame_indexes`（当前帧序号）及 `backgrounds`（状态背景颜色）。系统信息增加 `minimum_free_heap`、`largest_free_block`、`animation_stack_free_min`、本次启动的 `legacy_reclaimed_files/bytes`。精确遗留资源回收不含未知文件或用户素材。
+
+## USB Wi-Fi 配网与提示
+
+`hello.capabilities` 包含 `wifi_management_v1` 时，USB 可使用 `wifi_status`、`wifi_configure`（ssid/password）和 `wifi_ignore`（ignored 布尔值）。这些命令不续租工作状态。
+
+返回 `wifi`：ready、connected（真实 STA 取得 IP）、ssid、ip、ap_mode、ignored、prompt、displayed_prompt，以及 setup.job_id/state/saved/error。密码不出现在回复或日志。连接在后台执行，状态轮询不会等待认证/DHCP完成；失败不覆盖保存的凭据，新记录作为一个版本化 NVS blob 写入，旧格式可读取。
+
+SSID 最大32字节；空密码表示开放网络，WPA密码8–63字节，或64位十六进制PSK。忙碌/初始化未完成拒绝新请求；错误密码/无IP返回失败，可重试。取得IP并保存后成功提示约2秒，关闭AP并恢复动画，不重启设备或网页服务。短暂掉线保留自动重连及延后AP收尾。
+
+USB后台提供 GET `/api/wifi/status`、POST `/api/wifi/configure` 和 POST `/api/wifi/ignore`，沿用本机令牌/Origin/设备校验。Wi-Fi后台同名HTTP接口共用设备逻辑。忽略选项跨重启保持，只跳过屏幕提示，不删除凭据或关闭配网入口。
+
+中屏提示图嵌入应用，按AP、连接中、成功三种状态显示；不占SPIFFS。1.2起移除背景灯效，旧配置规范化时清除失效字段，动画联动和状态颜色保留。
 
 ## 配置
 
@@ -76,9 +88,6 @@ USB 上传：import_begin(directory=v加8位十六进制)→token；file_begin(t
 | layout | traffic / all |
 | idle_playback | off / colors / black |
 | idle_done_delay | -1–300秒；-1等待完成确认，0立即，默认10 |
-| effects_enabled / effects_linked | 布尔值；灯效默认关闭，同相默认开启 |
-| effect | blink / double / breathe / chase |
-| effect_period | 800–6000 毫秒，默认1600 |
 | animation_link | independent / sync / stagger；默认独立 |
 | media | 3个设备目录路径，格式 `/data/...` |
 | scope | mode为all/project/session，target为对应ID；all使用空字符串 |

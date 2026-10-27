@@ -5,7 +5,7 @@
 #include "companion.h"
 #include "companion_render.h"
 #include "alpha_cache.h"
-#include "lamp_effects.h"
+#include "animation_timing.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -129,7 +129,7 @@ static void jpeg_tests(void)
     assert(display_jpeg_decode_into("frame.jpg",pixels,25600,&w,&h)==ESP_FAIL);assert(!used);remove("frame.jpg");
 }
 static uint16_t lcd[160*160];
-static companion_visual_t visual={.background=0x07e0,.base_background=0x07e0,.foreground_size=132,.revision=1,.count=5,.active=true};
+static companion_visual_t visual={.background=0x07e0,.foreground_size=132,.revision=1,.count=5,.active=true};
 static unsigned source_w=80,source_h=80;
 static display_rotation_t rotation;
 static void *canvas;
@@ -172,28 +172,20 @@ static void composition_tests(void)
         }
         assert(lcd[144*160+80]==__builtin_bswap16((uint16_t)~visual.background));
     }
+    uint8_t prompt[32]={0xff,0xd8,0xff,0xc0,0,17,8,0,160,0,160};
+    rotation=DISPLAY_ROTATION_0;
+    assert(companion_render_prompt(1,prompt,sizeof(prompt))==ESP_OK);
+    assert(lcd[159*160+159]==(uint16_t)(25599*13));assert(used==51200&&peak==51200);
+    fail_codec=true;assert(companion_render_prompt(1,prompt,sizeof(prompt))==ESP_FAIL);fail_codec=false;
     visual.background=0;visual.revision++;
     assert(companion_render_frame(1,NULL)==ESP_OK);
-    visual.base_background=0xffe0;visual.revision++;
+    visual.background=0xffe0;visual.revision++;
     assert(companion_render_frame(1,NULL)==ESP_OK);
-    assert(lcd[144*160+80]==__builtin_bswap16((uint16_t)~visual.base_background));
+    assert(lcd[144*160+80]==__builtin_bswap16((uint16_t)~visual.background));
     fixture_free(canvas);assert(!used);
 }
-static void effect_tests(void)
+static void animation_timing_tests(void)
 {
-    for(unsigned t=0;t<20000;t+=7){
-        unsigned on=0;
-        for(unsigned ch=0;ch<3;ch++){
-            on+=light_effect_level(LIGHT_CHASE,t,1600,ch,1)==8;
-            for(unsigned mode=0;mode<4;mode++)assert(light_effect_level((light_effect_t)mode,t,1600,ch,0)<=8);
-            assert(light_effect_level(LIGHT_BLINK,t,1600,ch,1)==light_effect_level(LIGHT_BLINK,t,1600,0,1));
-        }
-        assert(on==1);
-    }
-    assert(light_effect_level(LIGHT_BREATHE,0,1600,0,1)==0);
-    assert(light_effect_level(LIGHT_BREATHE,800,1600,0,1)==8);
-    for(unsigned p=0;p<8;p++)assert(light_effect_level(LIGHT_DOUBLE,p*200,1600,0,1)==(p==0||p==2?8:0));
-    assert(light_effect_color(0xf800,8)==0xf800&&light_effect_color(0xffff,0)==0);
     const uint16_t delays[]={100,200,300};
     assert(animation_link_frame(delays,3,600000,600000,99999,ANIMATION_SYNC,0)==0);
     assert(animation_link_frame(delays,3,600000,600000,100000,ANIMATION_SYNC,0)==1);
@@ -207,6 +199,6 @@ static void effect_tests(void)
 }
 int main(void)
 {
-    transforms();cache_tests();jpeg_tests();composition_tests();effect_tests();
+    transforms();cache_tests();jpeg_tests();composition_tests();animation_timing_tests();
     puts("In-place scale/rotation, R5 bounds/CRC/streaming, JPEG ownership and mixed-aspect backgrounds/indicators: PASS");return 0;
 }

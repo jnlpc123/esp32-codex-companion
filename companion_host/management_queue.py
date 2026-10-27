@@ -6,7 +6,8 @@ import time
 
 OPS=frozenset(('get','hello','get_catalog','sysinfo','storage_info','storage_list','file_read',
                'config','activate','ack','tone','manual_state','clear_media','cleanup_status','prune_cache','import_begin',
-               'import_commit','import_abort','file_begin','file_chunk','file_end','file_status','storage_job_status'))
+               'import_commit','import_abort','file_begin','file_chunk','file_end','file_status','storage_job_status',
+               'wifi_configure','wifi_status','wifi_ignore'))
 
 class ManagementQueue:
     def __init__(self):

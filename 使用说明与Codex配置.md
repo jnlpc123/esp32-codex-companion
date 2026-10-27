@@ -1,6 +1,6 @@
 # 三屏 Codex 编程信号灯：使用说明与换电脑配置
 
-版本：1.1.0 · 2026-10-27，ESP32-C3 三屏伴侣正式固件。适用于当前已改造的同款硬件。
+版本：1.2.0-rc.1 · 2026-10-27，ESP32-C3 三屏伴侣候选固件。适用于当前已改造的同款硬件。
 
 新版 USB 后台：桥接启动后打开 `http://127.0.0.1:17831/`，无需设备 Wi-Fi 即可管理素材与设置。两个清理按钮的范围、恢复限制、断线处理及端口配置见 [USB 后台与存储管理](docs/usb-management.md)。旧的 Wi-Fi 后台继续保留。
 
@@ -91,7 +91,7 @@ Windows桌面精确检测模式下，已完成会话在Codex前台显示约1秒�
 
 ### 3.1 解压到固定位置
 
-将 `codex-companion-v1.1.0-windows.zip` 完整解压到固定位置，例如 `C:\CodexCompanion`。以下命令在 **PowerShell** 中执行，安装包根目录应直接包含 `companion_host` 文件夹：
+将 `codex-companion-v1.2.0-rc.1-windows.zip` 完整解压到固定位置，例如 `C:\CodexCompanion`。以下命令在 **PowerShell** 中执行，安装包根目录应直接包含 `companion_host` 文件夹：
 
 ```powershell
 Set-Location "C:\CodexCompanion"
@@ -312,12 +312,14 @@ python .\companion_host\bridge.py --stop    # 临时退出，下次 Hook 仍可�
 
 停用：先 `--pause`，再在 Codex `/hooks` 中禁用仅带 `--vibe-companion` 的条目。确认不再使用后可移除这些条目和程序目录，保留其他 Hooks。不要用整份旧配置覆盖当前配置来卸载。
 
-同一块已安装设备换电脑无需刷机。发行页中的 `codex-companion-v1.1.0-esp32c3.bin` 仅供同款、已有兼容 bootloader/分区表的设备应用更新，偏移 `0x10000`；不是空白芯片的完整量产包。不要整片擦除或覆盖 NVS/SPIFFS，以免丢失设置/素材。裸板初次烧录需另行准备匹配的完整固件布局。
+同一块已安装设备换电脑无需刷机。发行页中的 `codex-companion-v1.2.0-rc.1-esp32c3.bin` 仅供同款、已有兼容 bootloader/分区表的设备应用更新，偏移 `0x10000`；不是空白芯片的完整量产包。不要整片擦除或覆盖 NVS/SPIFFS，以免丢失设置/素材。裸板初次烧录需另行准备匹配的完整固件布局。
 
 ## 9. 版本与验证依据
 
 固件及发行包的 SHA256 以对应 GitHub Release 中的 `SHA256SUMS.txt` 为准。
 
-本机验证环境为 Windows、Python 3.12、Codex 桌面 26.1021.3705.0 及曾用于 Hook 审阅的 CLI 0.164.0-alpha.11.1。桌面版本/CLI 版本只是测试记录，不是对任意新版本兼容性的保证。当前电脑端回归 71 项通过；用户已确认真实人工授权出现/处理后的黄灯行为正常。三屏默认 112px 已测约 30 FPS；没有安装喇叭，实际出声未验收。
+本机验证环境为 Windows、Python 3.12、Codex 桌面 26.1021.3705.0 及曾用于 Hook 审阅的 CLI 0.164.0-alpha.11.1。桌面版本/CLI 版本只是测试记录，不是对任意新版本兼容性的保证。当前电脑端回归 103 项通过；用户已确认真实人工授权出现/处理后的黄灯行为正常。三屏默认 112px 已测约 30 FPS；没有安装喇叭，实际出声未验收。
 
 官方配置依据（核对日期 2026-10-25）：[Hooks 与信任审阅](https://learn.chatgpt.com/docs/hooks)、[Codex CLI](https://learn.chatgpt.com/docs/codex/cli)、[Windows 客户端与 CLI 部署](https://learn.chatgpt.com/docs/enterprise/windows-deployment)。这些页面说明官方客户端和 Hooks；本项目的 USB/Wi-Fi 桥接与只读控件匹配属于本固件配套实现。
+
+USB 配网：展开本机后台“连接与诊断”，填写网络并连接；无需切换电脑 Wi-Fi。中屏显示原AP/连接中/成功图，成功后直接恢复动画。离线时勾选“忽略配网提示”，该选项重启保持。背景灯效已移除，状态颜色和动画联动保留。

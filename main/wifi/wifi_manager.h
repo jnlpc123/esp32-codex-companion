@@ -7,6 +7,8 @@
 #pragma once
 
 #include <stdbool.h>
+#include "esp_err.h"
+#include "wifi_prompt.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,11 +31,15 @@ void wifi_init(void);
  */
 bool wifi_try_connect_or_enter_ap(void);
 
-/**
- * Save a WiFi credential to NVS.
- * Max 3 entries. When full, oldest is evicted (FIFO).
- */
-void wifi_save_credential(const char *ssid, const char *password);
+bool wifi_is_ready(void);
+esp_err_t wifi_connect_requested(const char *ssid,const char *password);
+esp_err_t wifi_save_credential_checked(const char *ssid,const char *password);
+bool wifi_setup_ignored(void);
+esp_err_t wifi_set_setup_ignored(bool ignored);
+wifi_prompt_t wifi_prompt_current(void);
+void wifi_configuration_connected(void);
+void wifi_configuration_complete(void);
+void wifi_configuration_failed(void);
 
 #ifdef __cplusplus
 }

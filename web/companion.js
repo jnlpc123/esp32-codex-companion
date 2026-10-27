@@ -42,12 +42,25 @@ async function clearMedia(scope,{confirm:ask,send=request}){
  if(!ask(text))return null;
  return finishCleanup(await send('/api/companion',JSON.stringify({v:1,op:'clear_media',scope,confirm:scope==='all'?'DELETE_ALL_MEDIA':'DELETE_UNUSED_MEDIA'})),send);
 }
+async function provisionWifi({ssid,password,send=request,pause=()=>new Promise(r=>setTimeout(r,700)),timeout=90000}){
+ const start=await send('/api/wifi/configure',JSON.stringify({ssid,password}));
+ const id=start.wifi?.setup?.job_id;if(!Number.isInteger(id)||id<1)throw Error('设备未返回配网任务，请更新固件并查看网络状态');
+ const deadline=Date.now()+timeout;
+ while(Date.now()<deadline){
+  const status=await send('/api/wifi/status');
+  if(status.setup?.job_id!==id)throw Error('设备已重启或配网任务已改变，请查看当前网络状态');
+  if(status.setup.state==='failed')throw Error(status.setup.error||'连接失败，请检查网络和密码');
+  if(status.setup.state==='connected'&&status.setup.saved&&status.connected&&status.ip)return status;
+  await pause();
+ }
+ throw Error('尚未确认配网结果，请查看网络状态后再操作');
+}
 let localKey='',localDevice='';
 async function request(path,body,device=localDevice){
  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),120000);
  try{
   const headers=typeof body==='string'?{'Content-Type':'application/json'}:{};
-  if(localKey){headers['X-Vibe-Key']=localKey;if(body!==undefined)headers['X-Vibe-Device']=device;}
+  if(localKey){headers['X-Vibe-Key']=localKey;headers['X-Vibe-Device']=device;}
   const response=await fetch(path,{method:body===undefined?'GET':'POST',body,headers,signal:controller.signal,cache:'no-store'});
   const raw=await response.text();
   let result;try{result=JSON.parse(raw);}catch{
@@ -116,7 +129,7 @@ function taskDotLayout(count){
  const n=Math.min(5,Math.max(0,Math.floor(Number.isFinite(count)?count:0)));
  return Array.from({length:n},(_,index)=>{const dx=-(n-1)*7+index*14;return {x:80+dx,y:144-Math.floor((dx*dx+74)/148),radius:5,hollow:count>5&&index===4};});
 }
-const api={request,clearMedia,storageSummary,mediaGroups,timingText,storageRequired,validDirectory,uploadSequence,gifFrames,dotColor565,taskDotLayout,...alpha};
+const api={provisionWifi,request,clearMedia,storageSummary,mediaGroups,timingText,storageRequired,validDirectory,uploadSequence,gifFrames,dotColor565,taskDotLayout,...alpha};
 root.VibeImport=api;if(typeof module!=='undefined')module.exports=api;
 if(typeof document==='undefined')return;
 
@@ -155,7 +168,7 @@ async function decodeFile(file,progress){
 
 async function init(){
  const $=id=>document.getElementById(id),cards=[...document.querySelectorAll('.screen')];
- let latest=null,initialized=false,busy=false,pollTimer=null;
+ let latest=null,initialized=false,busy=false,pollTimer=null,wifiState=null,wifiSupported=true;
  const stateLabels={idle:'等你开始',working:'正在工作',waiting:'需要你回应',done:'工作完成'};
  const colors={idle:'#e1e5db',working:'#22c55e',waiting:'#facc15',done:'#ef4444'};
  function toast(text){const el=$('globalMessage');el.textContent=text;el.hidden=false;setTimeout(()=>{el.hidden=true;},5000);}
@@ -222,10 +235,20 @@ async function init(){
    const count=(status.counts||{})[role]||0,active=status.idle_playing||count>0;
    const lamp=card.querySelector('.lamp'),bg=status.backgrounds?.[i]??0x0841;
    card.classList.toggle('active',active);lamp.classList.toggle('inactive',!active);lamp.style.background=hex565(bg);
-   const dots=card.querySelector('.task-dots');dots.replaceChildren();dots.style.color=hex565(dotColor565(status.base_backgrounds?.[i]??bg));
+   const dots=card.querySelector('.task-dots');dots.replaceChildren();dots.style.color=hex565(dotColor565(bg));
    for(const position of taskDotLayout(status.idle_playing?0:count)){const dot=document.createElement('i');if(position.hollow)dot.className='overflow';dot.style.setProperty('--rise',String(144-position.y));dots.append(dot);}
    let label=card.querySelector('.task-count');if(!label){label=document.createElement('p');label.className='task-count';lamp.after(label);}label.textContent=status.idle_playing?'空闲播放':count+' 个任务'+(active?'':' · 暂停');
    const dir=status.config.media[i];const image=card.querySelector('img');
+   const network=i===1?wifiState?.displayed_prompt:null;
+   const networkImages={ap:'ap-mode.jpg',connecting:'wifi-connecting.jpg',success:'wifi-connected.jpg'};
+   if(networkImages[network]){
+    if(image.dataset.prompt!==network){image.onerror=null;image.src='/network/'+networkImages[network];image.dataset.prompt=network;}
+    image.hidden=false;image.style.width=image.style.height='100%';image.style.top='50%';lamp.classList.remove('inactive');dots.replaceChildren();
+    label.textContent=network==='ap'?'等待配网':network==='connecting'?'正在连接 Wi-Fi':'配网成功';
+    if(fill||!initialized)card.querySelector('.existing-dir').value=dir;return;
+   }
+   if(image.dataset.prompt){delete image.dataset.prompt;delete image.dataset.dir;image.style.width=image.style.height=image.style.top='';}
+
    if(dir&&image.dataset.dir!==dir){
     image.dataset.dir=dir;const preview=dir.replace(/^\/data/,'')+'/_preview.png';let retries=0;
     image.hidden=false;image.onerror=()=>{
@@ -240,9 +263,7 @@ async function init(){
   if(fill||!initialized){$('layout').value=status.config.layout;$('foregroundSize').value=status.config.foreground_size;$('brightness').value=status.config.brightness;$('volume').value=status.config.volume;$('muted').checked=status.config.muted;outputs();}
   if(fill||!initialized){
    $('idlePlayback').value=status.config.idle_playback||'off';
-   $('effectsEnabled').checked=!!status.config.effects_enabled;$('effectsLinked').checked=status.config.effects_linked!==false;
-   $('effect').value=status.config.effect||'breathe';$('effectPeriod').value=status.config.effect_period||1600;
-   $('animationLink').value=status.config.animation_link||'independent';effectControls();
+   $('animationLink').value=status.config.animation_link||'independent';
    const select=$('idleDoneDelay'),delay=String(status.config.idle_done_delay??10);
    if(!Array.from(select.options).some(option=>option.value===delay)){const option=document.createElement('option');option.value=delay;option.textContent='红灯保留 '+delay+' 秒';select.append(option);}
    select.value=delay;
@@ -259,11 +280,13 @@ async function init(){
  }
  async function poll(){
   clearTimeout(pollTimer);
-  try{show(await request('/api/companion'));}catch{$('usbBadge').textContent='设备网页连接中断';}
+  try{
+   const status=await request('/api/companion');
+   if(wifiSupported)try{wifiState=await request('/api/wifi/status');showWifi();}catch(e){$('wifiStatus').textContent=e.message;}
+   show(status);
+  }catch{$('usbBadge').textContent='设备网页连接中断';}
   if(!document.hidden)pollTimer=setTimeout(poll,1500);
  }
- function effectControls(){const enabled=$('effectsEnabled').checked;$('effect').disabled=$('effectPeriod').disabled=!enabled;$('effectsLinked').disabled=!enabled||$('effect').value==='chase';$('effectPeriodValue').textContent=(Number($('effectPeriod').value)/1000).toFixed(1)+' 秒';}
- for(const id of ['effectsEnabled','effect','effectPeriod'])$(id).addEventListener('input',effectControls);
  for(const id of ['foregroundSize','brightness','volume'])$(id).addEventListener('input',outputs);
  document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTimeout(pollTimer);else poll();});
  cards.forEach((card,index)=>{
@@ -296,7 +319,7 @@ async function init(){
  });
  $('settingsForm').addEventListener('submit',async e=>{
   e.preventDefault();if(busy)return;if(!initialized||!latest){toast('请等待设备连接');return;}const button=e.submitter;button.disabled=true;$('settingsMessage').classList.remove('error');
-  try{show(await request('/api/companion',JSON.stringify({v:1,op:'config',config:{colors:['colorDone','colorWaiting','colorWorking'].map(id=>pack565($(id).value)),scope:{mode:$('scopeMode').value,target:$('scopeTarget').value},layout:$('layout').value,effects_enabled:$('effectsEnabled').checked,effects_linked:$('effectsLinked').checked,effect:$('effect').value,effect_period:Number($('effectPeriod').value),animation_link:$('animationLink').value,idle_playback:$('idlePlayback').value,idle_done_delay:Number($('idleDoneDelay').value),foreground_size:Number($('foregroundSize').value),brightness:Number($('brightness').value),volume:Number($('volume').value),muted:$('muted').checked}})),true);$('settingsMessage').textContent='已保存';}
+  try{show(await request('/api/companion',JSON.stringify({v:1,op:'config',config:{colors:['colorDone','colorWaiting','colorWorking'].map(id=>pack565($(id).value)),scope:{mode:$('scopeMode').value,target:$('scopeTarget').value},layout:$('layout').value,animation_link:$('animationLink').value,idle_playback:$('idlePlayback').value,idle_done_delay:Number($('idleDoneDelay').value),foreground_size:Number($('foregroundSize').value),brightness:Number($('brightness').value),volume:Number($('volume').value),muted:$('muted').checked}})),true);$('settingsMessage').textContent='已保存';}
   catch(error){$('settingsMessage').classList.add('error');$('settingsMessage').textContent=error.message;}
   finally{button.disabled=false;}
  });
@@ -306,10 +329,32 @@ async function init(){
  document.querySelectorAll('.state-test').forEach(b=>b.addEventListener('click',async()=>{
   try{show(await request('/api/companion',JSON.stringify({v:1,op:'state',state:b.dataset.state,notify:true})));}catch(error){toast(error.message);}
  }));
+ function showWifi(){
+  if(!wifiState)return;
+  $('wifiIgnore').checked=!!wifiState.ignored;
+  $('wifiConnect').disabled=!wifiState.ready||busy;
+  $('wifiStatus').textContent=!wifiState.ready?'Wi-Fi 正在初始化…':wifiState.setup?.state==='connecting'?'正在连接 Wi-Fi…':wifiState.connected?`已连接 ${wifiState.ssid} · ${wifiState.ip}`:wifiState.ap_mode?'未连接路由器 · 配网热点已开启':'未连接路由器';
+  if(wifiState.ignored)$('wifiStatus').textContent+=' · 已忽略配网提示';
+ }
+ $('wifiIgnore').addEventListener('change',async()=>{
+  if(busy){$('wifiIgnore').checked=!!wifiState?.ignored;toast('请等待当前操作完成');return;}
+  $('wifiIgnore').disabled=true;
+  try{
+   wifiState=(await request('/api/wifi/ignore',JSON.stringify({ignored:$('wifiIgnore').checked}))).wifi;
+   showWifi();$('wifiMessage').textContent=wifiState.ignored?'已忽略配网提示，直接显示动画':'已恢复配网提示';
+  }catch(e){$('wifiIgnore').checked=!!wifiState?.ignored;$('wifiMessage').textContent=e.message;}
+  finally{$('wifiIgnore').disabled=false;}
+ });
  $('wifiForm').addEventListener('submit',async e=>{
-  e.preventDefault();$('wifiMessage').textContent='正在连接，请保持设备供电…';
-  try{await request('/api/wifi/configure',JSON.stringify({ssid:$('ssid').value,password:$('wifiPassword').value}));$('wifiMessage').textContent='配置已提交。若地址改变，请使用 esp32.local 重新打开页面。';$('wifiPassword').value='';}
+  e.preventDefault();if(busy){$('wifiMessage').textContent='请等待当前操作完成';return;}
+  busy=true;$('wifiConnect').disabled=$('wifiIgnore').disabled=true;
+  document.querySelectorAll('.import,.use-existing,#cleanStorage,#clearAllStorage').forEach(b=>b.disabled=true);
+  $('wifiMessage').textContent='正在连接，请保持 USB 连接和设备供电…';
+  const ssid=$('ssid').value,password=$('wifiPassword').value;$('wifiPassword').value='';
+  const device=latest?.device_id||localDevice;
+  try{wifiState=await provisionWifi({ssid,password,send:(path,body)=>request(path,body,device)});showWifi();$('wifiMessage').textContent=`已保存并连接 · ${wifiState.ip}，成功提示后恢复动画`;}
   catch(error){$('wifiMessage').textContent=error.message;}
+  finally{busy=false;$('wifiIgnore').disabled=false;document.querySelectorAll('.import,.use-existing,#cleanStorage,#clearAllStorage').forEach(b=>b.disabled=false);showWifi();}
  });
  async function storage(){try{
   const info=await request('/api/sysinfo');$('storageInfo').textContent=storageSummary(info)+(Number.isFinite(info.spiffs_upload_budget)?` · 建议导入预算 ${Math.floor(info.spiffs_upload_budget/1024)} KiB`:'');
@@ -322,7 +367,7 @@ async function init(){
   }catch(e){$('storageBreakdown').textContent=e.message;}
  }catch(e){$('storageInfo').textContent=e.message;}}
  if(location.hostname==='127.0.0.1'||location.hostname==='localhost'){
-  try{const context=await request('/api/local');localKey=context.token;localDevice=context.device_id;$('wifiForm').hidden=true;}
+  try{const context=await request('/api/local');localKey=context.token;localDevice=context.device_id;wifiSupported=context.capabilities?.includes('wifi_management_v1');$('wifiForm').hidden=!wifiSupported;}
   catch(e){toast('本机后台初始化失败：'+e.message);return;}
  }
  await poll();storage();

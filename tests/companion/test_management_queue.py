@@ -55,4 +55,11 @@ class QueueTests(unittest.TestCase):
         t.join();self.assertEqual(answers[0].get('offset'),768)
         self.assertEqual([x[0] for x in p.calls],['file_chunk','storage_job_status'])
 
+    def test_wifi_jobs_use_existing_serial_owner(self):
+        q=ManagementQueue();q.set_device('A','usb',['wifi_management_v1']);p=Peer();result=[]
+        t=threading.Thread(target=lambda:result.append(q.submit('A','wifi_status',{},1)));t.start()
+        time.sleep(.02);self.assertEqual(p.calls,[])
+        q.process_one(p,'A','usb');t.join()
+        self.assertEqual(len(result),1);self.assertEqual(result[0]['op'],'wifi_status')
+
 if __name__=='__main__':unittest.main()

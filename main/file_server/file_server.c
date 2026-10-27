@@ -14,6 +14,7 @@
 #include "import_transaction.h"
 #include "storage_service.h"
 #include "esp_timer.h"
+#include "wifi_prompt_assets.h"
 
 extern const unsigned char _binary_vibe_index_start[], _binary_vibe_index_end[];
 extern const unsigned char _binary_vibe_css_start[], _binary_vibe_css_end[];
@@ -59,6 +60,11 @@ static esp_err_t upload(httpd_req_t *req) { return storage_http_upload(req); }
 static esp_err_t serve(httpd_req_t *req)
 {
     const unsigned char *start = NULL, *end = NULL; const char *type = NULL;
+    wifi_prompt_t prompt=!strcmp(req->uri,"/network/ap-mode.jpg")?WIFI_PROMPT_AP:
+        !strcmp(req->uri,"/network/wifi-connecting.jpg")?WIFI_PROMPT_CONNECTING:
+        !strcmp(req->uri,"/network/wifi-connected.jpg")?WIFI_PROMPT_SUCCESS:WIFI_PROMPT_NONE;
+    if(prompt){const uint8_t *data;size_t bytes;if(wifi_prompt_asset(prompt,&data,&bytes)){httpd_resp_set_type(req,"image/jpeg");return httpd_resp_send(req,(const char*)data,bytes);}}
+
     if (!strcmp(req->uri, "/") || !strcmp(req->uri, "/index.html")) { start = _binary_vibe_index_start; end = _binary_vibe_index_end; type = "text/html; charset=utf-8"; }
     else if (!strcmp(req->uri, "/companion.css")) { start = _binary_vibe_css_start; end = _binary_vibe_css_end; type = "text/css"; }
     else if (!strcmp(req->uri, "/companion.js")) { start = _binary_vibe_js_start; end = _binary_vibe_js_end; type = "application/javascript"; }

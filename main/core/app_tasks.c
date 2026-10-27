@@ -5,6 +5,8 @@
 #include "storage_service.h"
 #include "companion.h"
 #include "companion_render.h"
+#include "wifi_manager.h"
+#include "wifi_prompt_assets.h"
 #include "display_init.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -28,6 +30,7 @@ static QueueHandle_t s_anim_cmd_queue;
 static TaskHandle_t s_anim_task;
 static volatile uint32_t s_total_frames[3];
 static volatile int s_current_frames[3]={-1,-1,-1};
+static volatile wifi_prompt_t s_network_prompt_drawn;
 static SemaphoreHandle_t s_gc_lock;
 static volatile bool s_gc_requested;
 static volatile int s_gc_result;
@@ -313,10 +316,15 @@ void AnimTask(void *pvParameters)
         companion_tick();
         int selected = -1;
         int64_t now = esp_timer_get_time();
+        wifi_prompt_t prompt=wifi_prompt_current();
         uint64_t cycle=0;
         for(int i=0;i<ANIM_CHANNELS;i++)if(states[i].duration_us>cycle)cycle=states[i].duration_us;
         for (int i = 0; i < ANIM_CHANNELS; i++) {
             int ch = (cursor + i) % ANIM_CHANNELS;
+            if(ch==1){
+                if(prompt!=WIFI_PROMPT_NONE){if(s_network_prompt_drawn!=prompt){selected=ch;break;}continue;}
+                if(s_network_prompt_drawn!=WIFI_PROMPT_NONE){selected=ch;revisions[ch]=0;break;}
+            }
             companion_visual_t visual;
             companion_get_visual(ch + 1, &visual);
             if(states[ch].last_active!=visual.active){
@@ -331,6 +339,12 @@ void AnimTask(void *pvParameters)
             if (revisions[ch] != visual.revision || (visual.active && states[ch].count && due)) { selected = ch; break; }
         }
         if (selected < 0) { vTaskDelay(1); continue; }
+        if(selected==1&&prompt!=WIFI_PROMPT_NONE){
+            const uint8_t *jpeg;size_t bytes;
+            esp_err_t ret=wifi_prompt_asset(prompt,&jpeg,&bytes)?companion_render_prompt(2,jpeg,bytes):ESP_FAIL;
+            if(ret==ESP_OK){s_network_prompt_drawn=prompt;s_current_frames[1]=-2;}
+            cursor=2;vTaskDelay(1);continue;
+        }
         anim_channel_state_t *state = &states[selected];
         int64_t started = esp_timer_get_time();
         // Paths were enumerated when loading this channel. Opening/decoding
@@ -346,7 +360,7 @@ void AnimTask(void *pvParameters)
         }
         esp_err_t result = companion_render_frame(selected + 1, state->count ? state->files[frame_index] : NULL);
         revisions[selected] = visual.revision;
-        if (result == ESP_OK) {s_total_frames[selected]++;s_current_frames[selected]=state->count?frame_index:-1;}
+        if (result == ESP_OK) {if(selected==1)s_network_prompt_drawn=WIFI_PROMPT_NONE;s_total_frames[selected]++;s_current_frames[selected]=state->count?frame_index:-1;}
         if (result == ESP_OK) state->rendered++;
         else ESP_LOGW(TAG, "[anim] ch=%d frame=%d: %s", selected + 1, state->index, esp_err_to_name(result));
         int64_t interval_us = (int64_t)(state->count ? state->delays[frame_index] : 33) * 1000;
@@ -419,3 +433,5 @@ bool anim_validate_directory(const char *path, int expected)
     closedir(dir);
     return valid && count > 0 && (!expected || expected == count);
 }
+
+unsigned anim_network_prompt(void){return s_network_prompt_drawn;}

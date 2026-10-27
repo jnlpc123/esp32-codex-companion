@@ -10,8 +10,21 @@ from urllib.parse import urlsplit
 from companion_host.media_transfer import MediaTransfer
 
 ASSETS={'/':'index.html','/index.html':'index.html','/companion.css':'companion.css',
-        '/companion.js':'companion.js','/alpha-codec.js':'alpha-codec.js','/vendor/gifuct.js':'vendor/gifuct.js'}
+        '/companion.js':'companion.js','/alpha-codec.js':'alpha-codec.js','/vendor/gifuct.js':'vendor/gifuct.js',
+        '/network/ap-mode.jpg':'../main/wifi/assets/ap-mode.jpg',
+        '/network/wifi-connecting.jpg':'../main/wifi/assets/wifi-connecting.jpg',
+        '/network/wifi-connected.jpg':'../main/wifi/assets/wifi-connected.jpg'}
 COMMANDS=frozenset(('get','get_catalog','storage_info','storage_list','config','activate','ack','tone','state','clear_media','cleanup_status','prune_cache'))
+
+def wifi_credentials(request):
+    ssid,password=request.get('ssid'),request.get('password')
+    if not isinstance(ssid,str) or not isinstance(password,str) or '\0' in ssid+password:
+        raise ValueError('Invalid Wi-Fi credentials')
+    try:slen,plen=len(ssid.encode('utf8')),len(password.encode('utf8'))
+    except UnicodeError:raise ValueError('Invalid Wi-Fi credentials') from None
+    if not 1<=slen<=32 or not (plen==0 or 8<=plen<=63 or plen==64 and all(c in '0123456789abcdefABCDEF' for c in password)):
+        raise ValueError('Invalid Wi-Fi credentials: SSID 1-32 bytes, password 8-63 bytes or empty')
+    return dict(ssid=ssid,password=password)
 
 class ManagementServer:
     def __init__(self,queue,web_root,bind='127.0.0.1',port=17831):
@@ -47,7 +60,9 @@ class ManagementServer:
             def query(self,op,fields=None,expected_device=None):
                 state=self.device()
                 if expected_device is not None and state['device_id']!=expected_device:raise ValueError('USB device changed before command delivery')
-                if op not in ('get','get_catalog','config','ack','tone','manual_state') and 'storage_v1' not in state['capabilities']:
+                if op in ('wifi_status','wifi_configure','wifi_ignore') and 'wifi_management_v1' not in state['capabilities']:
+                    raise ValueError('Device firmware needs USB Wi-Fi upgrade')
+                if op not in ('get','get_catalog','config','ack','tone','manual_state','wifi_status','wifi_configure','wifi_ignore') and 'storage_v1' not in state['capabilities']:
                     raise ValueError('Device firmware needs USB management upgrade')
                 deadline=time.monotonic()+8
                 while True:
@@ -71,6 +86,7 @@ class ManagementServer:
                     if path=='/api/companion':self.send(200,self.query('get'));return
                     if path=='/api/sysinfo':self.send(200,self.query('sysinfo'));return
                     if path=='/api/storage':self.send(200,self.query('storage_info'));return
+                    if path=='/api/wifi/status':self.send(200,self.query('wifi_status',expected_device=self.headers.get('X-Vibe-Device'))['wifi']);return
                     if path.startswith('/api/') or '..' in path or '%' in path or '?' in path or '#' in path:
                         self.send(404,dict(ok=False,error='Not found'));return
                     state=self.device();raw=owner.transfer.read(state['device_id'],'/data'+path)
@@ -98,7 +114,12 @@ class ManagementServer:
                         except (ValueError,UnicodeError):raise ValueError('Invalid JSON') from None
                         if not isinstance(request,dict):raise ValueError('Invalid JSON command')
                         op=request.get('op')
-                        if self.path=='/api/import':
+                        if self.path=='/api/wifi/ignore':
+                            if not isinstance(request.get('ignored'),bool):raise ValueError('Invalid Wi-Fi ignore flag')
+                            result=self.query('wifi_ignore',dict(ignored=request['ignored']),device)
+                        elif self.path=='/api/wifi/configure':
+                            result=self.query('wifi_configure',wifi_credentials(request),device)
+                        elif self.path=='/api/import':
                             if 'usb_media_v1' not in state['capabilities']:raise ValueError('Device firmware needs USB media upgrade')
                             result=owner.transfer.action(device,op,request.get('directory'))
                         elif self.path=='/api/companion' and op in COMMANDS:

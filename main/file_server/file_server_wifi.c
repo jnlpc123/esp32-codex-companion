@@ -6,6 +6,7 @@
  */
 #include "file_server_wifi.h"
 #include "wifi_manager.h"
+#include "wifi_control.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
@@ -19,36 +20,6 @@
 /* ---------------------------------------------------------------------------
  * Simple JSON helpers
  * -------------------------------------------------------------------------*/
-
-/* Extract string value for a given key from a simple JSON object.
-   e.g., {"ssid":"MyWiFi","password":"p@ss"} → json_get_string(json, "ssid", buf, size)
-   Handles \" escaped quotes within values. */
-static void json_get_string(const char *json, const char *key,
-                            char *out, size_t out_size)
-{
-    char pattern[64];
-    snprintf(pattern, sizeof(pattern), "\"%s\":\"", key);
-
-    const char *start = strstr(json, pattern);
-    if (!start) {
-        out[0] = '\0';
-        return;
-    }
-    start += strlen(pattern);
-
-    size_t i = 0;
-    while (*start && i < out_size - 1) {
-        if (*start == '\\' && start[1] == '"') {
-            out[i++] = '"';
-            start += 2;
-        } else if (*start == '"') {
-            break;
-        } else {
-            out[i++] = *start++;
-        }
-    }
-    out[i] = '\0';
-}
 
 /* Simple JSON string escape for SSID names containing quotes */
 static void json_escape_ssid(const char *src, char *dst, size_t dst_size)
@@ -146,137 +117,35 @@ static esp_err_t wifi_scan_get_handler(httpd_req_t *req)
  * POST /api/wifi/configure — save credentials and connect to WiFi
  * -------------------------------------------------------------------------*/
 
+static esp_err_t send_wifi_json(httpd_req_t *req,cJSON *reply,const char *error)
+{
+    if(error){cJSON_AddBoolToObject(reply,"ok",false);cJSON_AddStringToObject(reply,"error",error);httpd_resp_set_status(req,"400 Bad Request");}
+    else cJSON_AddBoolToObject(reply,"ok",true);
+    char *text=cJSON_PrintUnformatted(reply);cJSON_Delete(reply);
+    if(!text)return httpd_resp_send_err(req,HTTPD_500_INTERNAL_SERVER_ERROR,"Wi-Fi response unavailable");
+    httpd_resp_set_type(req,"application/json");esp_err_t ret=httpd_resp_sendstr(req,text);free(text);return ret;
+}
 static esp_err_t wifi_configure_post_handler(httpd_req_t *req)
 {
-    char buf[256] = {0};
-    int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
-    if (ret <= 0) {
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_sendstr(req, "{\"success\":false,\"error\":\"Empty request\"}");
-        return ESP_FAIL;
+    char body[1025];size_t used=0;
+    if(req->content_len<1||req->content_len>=sizeof(body))return httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Invalid Wi-Fi request size");
+    while(used<req->content_len){int n=httpd_req_recv(req,body+used,req->content_len-used);if(n<=0)return ESP_FAIL;used+=n;}
+    body[used]=0;bool nul=memchr(body,0,used)!=NULL;
+    cJSON *request=nul?NULL:cJSON_ParseWithOpts(body,NULL,true),*reply=cJSON_CreateObject();
+    volatile unsigned char *raw=(volatile unsigned char*)body;for(size_t i=0;i<sizeof(body);i++)raw[i]=0;
+    const char *error=NULL;
+    if(!cJSON_IsObject(request))error="Invalid Wi-Fi request";
+    else{
+        cJSON_DeleteItemFromObjectCaseSensitive(request,"op");cJSON_AddStringToObject(request,"op",!strcmp(req->uri,"/api/wifi/ignore")?"wifi_ignore":"wifi_configure");
+        wifi_control_command(request,reply,&error);
+        cJSON *password=cJSON_GetObjectItemCaseSensitive(request,"password");
+        if(cJSON_IsString(password)){volatile char *p=password->valuestring;for(size_t i=0,n=strlen(password->valuestring);i<n;i++)p[i]=0;}
     }
-    buf[ret] = '\0';
-    ESP_LOGI(TAG, "Configure request: %s", buf);
-
-    // Parse JSON: {"ssid":"...", "password":"..."}
-    char ssid[64] = {0};
-    char password[64] = {0};
-    json_get_string(buf, "ssid", ssid, sizeof(ssid));
-    json_get_string(buf, "password", password, sizeof(password));
-
-    if (strlen(ssid) == 0) {
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_sendstr(req, "{\"success\":false,\"error\":\"SSID is required\"}");
-        return ESP_FAIL;
-    }
-
-    ESP_LOGI(TAG, "Configuring: SSID=%s", ssid);
-
-    // Save to NVS
-    wifi_save_credential(ssid, password);
-
-    // Configure STA with new credentials and connect
-    wifi_config_t wifi_cfg;
-    memset(&wifi_cfg, 0, sizeof(wifi_cfg));
-    strncpy((char *)wifi_cfg.sta.ssid, ssid, sizeof(wifi_cfg.sta.ssid));
-    strncpy((char *)wifi_cfg.sta.password, password,
-            sizeof(wifi_cfg.sta.password));
-    wifi_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-
-    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
-    esp_err_t conn_ret = esp_wifi_connect();
-
-    if (conn_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start WiFi connection: %s",
-                 esp_err_to_name(conn_ret));
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_sendstr(req, "{\"success\":false,\"error\":\"Failed to start connection\"}");
-        return ESP_FAIL;
-    }
-
-    ESP_LOGI(TAG, "WiFi connection initiated for SSID=%s", ssid);
-
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, "{\"success\":true}");
-
-    // Wait for STA connection (up to 15 seconds), then restart
-    ESP_LOGI(TAG, "Waiting for WiFi connection before restart...");
-    int wait_secs = 0;
-    bool sta_connected = false;
-    while (wait_secs < 15) {
-        wifi_ap_record_t ap_info;
-        memset(&ap_info, 0, sizeof(ap_info));
-        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK && ap_info.ssid[0] != '\0') {
-            sta_connected = true;
-            ESP_LOGI(TAG, "WiFi connected to %s, restarting", ap_info.ssid);
-            break;
-        }
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        wait_secs++;
-    }
-
-    if (!sta_connected) {
-        ESP_LOGW(TAG, "WiFi not connected within %d seconds, restarting anyway", wait_secs);
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(500));
-    ESP_LOGI(TAG, "Restarting device...");
-    esp_restart();
-    return ESP_OK; // never reached
+    cJSON_Delete(request);return send_wifi_json(req,reply,error);
 }
-
-/* ---------------------------------------------------------------------------
- * GET /api/wifi/status — return current WiFi connection status
- * -------------------------------------------------------------------------*/
-
 static esp_err_t wifi_status_get_handler(httpd_req_t *req)
 {
-    char json[256];
-
-    // Check STA connection status
-    wifi_ap_record_t ap_info;
-    memset(&ap_info, 0, sizeof(ap_info));
-    bool sta_connected = false;
-    char ssid[64] = "";
-    char ip_addr[16] = "";
-
-    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-        sta_connected = true;
-        strncpy(ssid, (const char *)ap_info.ssid, sizeof(ssid) - 1);
-    }
-
-    // Get STA IP address
-    if (sta_connected) {
-        esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-        if (sta_netif == NULL) {
-            sta_netif = esp_netif_get_handle_from_ifkey("STA");
-        }
-        if (sta_netif != NULL) {
-            esp_netif_ip_info_t ip_info;
-            if (esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK &&
-                ip_info.ip.addr != 0) {
-                snprintf(ip_addr, sizeof(ip_addr), IPSTR, IP2STR(&ip_info.ip));
-            }
-        }
-    }
-
-    // Check if AP mode is active
-    bool ap_mode = false;
-    wifi_mode_t mode;
-    if (esp_wifi_get_mode(&mode) == ESP_OK) {
-        ap_mode = (mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA);
-    }
-
-    snprintf(json, sizeof(json),
-             "{\"connected\":%s,\"ssid\":\"%s\",\"ip\":\"%s\",\"ap_mode\":%s}",
-             sta_connected ? "true" : "false",
-             ssid,
-             ip_addr,
-             ap_mode ? "true" : "false");
-
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, json);
-    return ESP_OK;
+    cJSON *reply=cJSON_CreateObject();wifi_control_status_json(reply);return send_wifi_json(req,reply,NULL);
 }
 
 /* ---------------------------------------------------------------------------
@@ -313,6 +182,8 @@ void register_wifi_handlers(httpd_handle_t server)
         .user_ctx  = NULL
     };
     httpd_register_uri_handler(server, &status_uri);
+    httpd_uri_t ignore_uri={.uri="/api/wifi/ignore",.method=HTTP_POST,.handler=wifi_configure_post_handler};
+    httpd_register_uri_handler(server,&ignore_uri);
 
     ESP_LOGI(TAG, "WiFi API handlers registered");
 }

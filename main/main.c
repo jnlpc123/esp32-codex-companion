@@ -20,7 +20,8 @@
 #include <stdio.h>
 #include <string.h>
 
-static void orientation(bool *mx, bool *my, bool *swap, int *rotation)
+// Keep its 2 KiB parse buffer off the long-lived startup stack frame.
+static void __attribute__((noinline)) orientation(bool *mx, bool *my, bool *swap, int *rotation)
 {
     *mx = DISPLAY_MIRROR_X; *my = DISPLAY_MIRROR_Y;
     *swap = DISPLAY_SWAP_XY; *rotation = DISPLAY_ROTATION;
