@@ -21,6 +21,14 @@ class ServerTests(unittest.TestCase):
     def test_bootstrap_and_static(self):
         status,raw=self.request('/api/local');self.assertEqual(status,200);self.assertEqual(json.loads(raw)['device_id'],'A')
         self.assertNotIn(self.server.token,self.server.url);self.assertEqual(self.request('/')[0],200)
+    def test_dedicated_wifi_page_assets(self):
+        for path in ('/wifi','/wifi.html','/wifi.js','/network.js'):
+            status,raw=self.request(path)
+            self.assertEqual(status,200,path)
+            self.assertTrue(raw)
+        self.assertIn(b'id="wifiForm"',self.request('/wifi')[1])
+        self.assertNotIn(b'id="wifiForm"',self.request('/')[1])
+
     def test_requires_token_and_matching_device(self):
         body=json.dumps(dict(op='config',config={'brightness':40}))
         self.assertEqual(self.request('/api/companion',body)[0],403)

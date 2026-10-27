@@ -25,6 +25,7 @@ set(web_dir "${CMAKE_CURRENT_SOURCE_DIR}/../web")
 set(web_gzip "${CMAKE_CURRENT_BINARY_DIR}/web_gzip")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${web_dir}/index.html" "${web_dir}/companion.css" "${web_dir}/companion.js"
+    "${web_dir}/wifi.html" "${web_dir}/wifi.js" "${web_dir}/network.js"
     "${web_dir}/vendor/gifuct.js" "${web_dir}/alpha-codec.js"
     "${CMAKE_CURRENT_SOURCE_DIR}/../tools/compress_web.py")
 execute_process(COMMAND "${PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/compress_web.py" "${web_dir}" "${web_gzip}"
@@ -42,3 +43,7 @@ target_add_binary_data(${COMPONENT_LIB} "${web_gzip}/vibe_alpha.gz" BINARY RENAM
 target_add_binary_data(${COMPONENT_LIB} "wifi/assets/ap-mode.jpg" BINARY RENAME_TO wifi_ap)
 target_add_binary_data(${COMPONENT_LIB} "wifi/assets/wifi-connecting.jpg" BINARY RENAME_TO wifi_connecting)
 target_add_binary_data(${COMPONENT_LIB} "wifi/assets/wifi-connected.jpg" BINARY RENAME_TO wifi_connected)
+
+target_add_binary_data(${COMPONENT_LIB} "${web_gzip}/vibe_wifi.gz" BINARY RENAME_TO vibe_wifi)
+target_add_binary_data(${COMPONENT_LIB} "${web_gzip}/vibe_wifi_js.gz" BINARY RENAME_TO vibe_wifi_js)
+target_add_binary_data(${COMPONENT_LIB} "${web_gzip}/vibe_network_js.gz" BINARY RENAME_TO vibe_network_js)

@@ -233,6 +233,12 @@ bool wifi_try_connect_or_enter_ap(void) {
 }
 
 bool wifi_is_ready(void){return s_wifi_ready;}
+bool wifi_requires_setup(void)
+{
+  wifi_mode_t mode=WIFI_MODE_NULL;
+  if(!s_wifi_ready||wifi_setup_ignored()||station_has_ip())return false;
+  return esp_wifi_get_mode(&mode)==ESP_OK&&(mode==WIFI_MODE_AP||mode==WIFI_MODE_APSTA);
+}
 
 esp_err_t wifi_connect_requested(const char *ssid,const char *password)
 {

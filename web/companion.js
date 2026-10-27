@@ -42,35 +42,8 @@ async function clearMedia(scope,{confirm:ask,send=request}){
  if(!ask(text))return null;
  return finishCleanup(await send('/api/companion',JSON.stringify({v:1,op:'clear_media',scope,confirm:scope==='all'?'DELETE_ALL_MEDIA':'DELETE_UNUSED_MEDIA'})),send);
 }
-async function provisionWifi({ssid,password,send=request,pause=()=>new Promise(r=>setTimeout(r,700)),timeout=90000}){
- const start=await send('/api/wifi/configure',JSON.stringify({ssid,password}));
- const id=start.wifi?.setup?.job_id;if(!Number.isInteger(id)||id<1)throw Error('设备未返回配网任务，请更新固件并查看网络状态');
- const deadline=Date.now()+timeout;
- while(Date.now()<deadline){
-  const status=await send('/api/wifi/status');
-  if(status.setup?.job_id!==id)throw Error('设备已重启或配网任务已改变，请查看当前网络状态');
-  if(status.setup.state==='failed')throw Error(status.setup.error||'连接失败，请检查网络和密码');
-  if(status.setup.state==='connected'&&status.setup.saved&&status.connected&&status.ip)return status;
-  await pause();
- }
- throw Error('尚未确认配网结果，请查看网络状态后再操作');
-}
-let localKey='',localDevice='';
-async function request(path,body,device=localDevice){
- const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),120000);
- try{
-  const headers=typeof body==='string'?{'Content-Type':'application/json'}:{};
-  if(localKey){headers['X-Vibe-Key']=localKey;headers['X-Vibe-Device']=device;}
-  const response=await fetch(path,{method:body===undefined?'GET':'POST',body,headers,signal:controller.signal,cache:'no-store'});
-  const raw=await response.text();
-  let result;try{result=JSON.parse(raw);}catch{
-   const detail=raw.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,200);
-   throw Error('设备请求失败（HTTP '+response.status+'）'+(detail?'：'+detail:'，服务器未返回详情'));
-  }
-  if(!response.ok||result.ok===false)throw Error(result.errno===28?'设备存储写入失败（空间不足），请先清理内部空间后重试':result.error||result.message||'设备未接受此操作');
-  return result;
- }finally{clearTimeout(timer);}
-}
+const network=typeof module!=='undefined'?require('./network.js'):root.VibeNetwork;
+const {request,provisionWifi}=network;
 async function uploadSequence({frames,preview,channel,directory,request:send=request,onProgress=()=>{}}){
  if(!validDirectory(directory)||!Number.isInteger(channel)||channel<1||channel>3||!frames.length||frames.length>256)throw Error('无效的素材或屏幕');
  if(frames.some(f=>!f.blob||f.blob.size<1||f.blob.size>65536))throw Error('单帧图片大小超限');
@@ -168,9 +141,9 @@ async function decodeFile(file,progress){
 
 async function init(){
  const $=id=>document.getElementById(id),cards=[...document.querySelectorAll('.screen')];
- let latest=null,initialized=false,busy=false,pollTimer=null,wifiState=null,wifiSupported=true;
+ let latest=null,initialized=false,busy=false,pollTimer=null,wifiState=null,wifiSupported=true,localContext=null;
  const stateLabels={idle:'等你开始',working:'正在工作',waiting:'需要你回应',done:'工作完成'};
- const colors={idle:'#e1e5db',working:'#22c55e',waiting:'#facc15',done:'#ef4444'};
+ document.querySelector('a[href="#diagnostics"]').addEventListener('click',()=>{$('diagnostics').open=true;});
  function toast(text){const el=$('globalMessage');el.textContent=text;el.hidden=false;setTimeout(()=>{el.hidden=true;},5000);}
  function outputs(){ $('foregroundValue').textContent=$('foregroundSize').value+' px';$('brightnessValue').textContent=$('brightness').value+'%';$('volumeValue').textContent=$('volume').value+'%';}
  let inspectingStorage=false;
@@ -223,7 +196,7 @@ async function init(){
  $('scopeMode').addEventListener('change',()=>scopeOptions());
  $('ackDone').addEventListener('click',async()=>{try{show(await request('/api/companion',JSON.stringify({v:1,op:'ack'})));toast('已确认，等待电脑同步');}catch(e){toast(e.message);}});
  function show(status,fill=false){
-  latest=status;if(localKey)localDevice=status.device_id||'';const state=stateLabels[status.state]?status.state:'idle';document.body.dataset.state=state;
+  latest=status;if(localContext)network.pinDevice(status.device_id);const state=stateLabels[status.state]?status.state:'idle';document.body.dataset.state=state;
   $('stateLabel').textContent=status.idle_playing?'空闲动画':stateLabels[state];
   const source=status.transport||(status.usb_connected?'usb':'none');
   $('usbBadge').textContent=source==='usb'?'USB 已同步':source==='wifi'?'Wi-Fi 已同步':'等待电脑桥接';
@@ -282,7 +255,7 @@ async function init(){
   clearTimeout(pollTimer);
   try{
    const status=await request('/api/companion');
-   if(wifiSupported)try{wifiState=await request('/api/wifi/status');showWifi();}catch(e){$('wifiStatus').textContent=e.message;}
+   if(wifiSupported)try{wifiState=await request('/api/wifi/status');if(!busy&&network.needsWifiSetup(wifiState)){location.replace('/wifi');return;}$('networkSummary').textContent=wifiState.connected?'Wi-Fi 已连接 · '+wifiState.ip:wifiState.ignored?'离线使用 · 可随时配网':'Wi-Fi 未连接';}catch{$('networkSummary').textContent='网络状态暂不可用';}
    show(status);
   }catch{$('usbBadge').textContent='设备网页连接中断';}
   if(!document.hidden)pollTimer=setTimeout(poll,1500);
@@ -329,33 +302,6 @@ async function init(){
  document.querySelectorAll('.state-test').forEach(b=>b.addEventListener('click',async()=>{
   try{show(await request('/api/companion',JSON.stringify({v:1,op:'state',state:b.dataset.state,notify:true})));}catch(error){toast(error.message);}
  }));
- function showWifi(){
-  if(!wifiState)return;
-  $('wifiIgnore').checked=!!wifiState.ignored;
-  $('wifiConnect').disabled=!wifiState.ready||busy;
-  $('wifiStatus').textContent=!wifiState.ready?'Wi-Fi 正在初始化…':wifiState.setup?.state==='connecting'?'正在连接 Wi-Fi…':wifiState.connected?`已连接 ${wifiState.ssid} · ${wifiState.ip}`:wifiState.ap_mode?'未连接路由器 · 配网热点已开启':'未连接路由器';
-  if(wifiState.ignored)$('wifiStatus').textContent+=' · 已忽略配网提示';
- }
- $('wifiIgnore').addEventListener('change',async()=>{
-  if(busy){$('wifiIgnore').checked=!!wifiState?.ignored;toast('请等待当前操作完成');return;}
-  $('wifiIgnore').disabled=true;
-  try{
-   wifiState=(await request('/api/wifi/ignore',JSON.stringify({ignored:$('wifiIgnore').checked}))).wifi;
-   showWifi();$('wifiMessage').textContent=wifiState.ignored?'已忽略配网提示，直接显示动画':'已恢复配网提示';
-  }catch(e){$('wifiIgnore').checked=!!wifiState?.ignored;$('wifiMessage').textContent=e.message;}
-  finally{$('wifiIgnore').disabled=false;}
- });
- $('wifiForm').addEventListener('submit',async e=>{
-  e.preventDefault();if(busy){$('wifiMessage').textContent='请等待当前操作完成';return;}
-  busy=true;$('wifiConnect').disabled=$('wifiIgnore').disabled=true;
-  document.querySelectorAll('.import,.use-existing,#cleanStorage,#clearAllStorage').forEach(b=>b.disabled=true);
-  $('wifiMessage').textContent='正在连接，请保持 USB 连接和设备供电…';
-  const ssid=$('ssid').value,password=$('wifiPassword').value;$('wifiPassword').value='';
-  const device=latest?.device_id||localDevice;
-  try{wifiState=await provisionWifi({ssid,password,send:(path,body)=>request(path,body,device)});showWifi();$('wifiMessage').textContent=`已保存并连接 · ${wifiState.ip}，成功提示后恢复动画`;}
-  catch(error){$('wifiMessage').textContent=error.message;}
-  finally{busy=false;$('wifiIgnore').disabled=false;document.querySelectorAll('.import,.use-existing,#cleanStorage,#clearAllStorage').forEach(b=>b.disabled=false);showWifi();}
- });
  async function storage(){try{
   const info=await request('/api/sysinfo');$('storageInfo').textContent=storageSummary(info)+(Number.isFinite(info.spiffs_upload_budget)?` · 建议导入预算 ${Math.floor(info.spiffs_upload_budget/1024)} KiB`:'');
   $('deviceInfo').textContent=`ESP32-C3 · ${Math.round(info.cpu_freq_hz/1000000)} MHz\n可用内存 ${Math.round(info.free_heap/1024)} KiB · 固件 ${info.app_version}`;
@@ -366,10 +312,11 @@ async function init(){
    if(r)$('storageBreakdown').textContent=`当前素材 ${Math.round(r.current_media_bytes/1024)} KiB · 其他素材 ${Math.round(r.other_media_bytes/1024)} KiB · 播放缓存 ${Math.round(r.cache_bytes/1024)} KiB · 系统及其他 ${Math.round(r.system_unknown_bytes/1024)} KiB`;
   }catch(e){$('storageBreakdown').textContent=e.message;}
  }catch(e){$('storageInfo').textContent=e.message;}}
- if(location.hostname==='127.0.0.1'||location.hostname==='localhost'){
-  try{const context=await request('/api/local');localKey=context.token;localDevice=context.device_id;wifiSupported=context.capabilities?.includes('wifi_management_v1');$('wifiForm').hidden=!wifiSupported;}
-  catch(e){toast('本机后台初始化失败：'+e.message);return;}
- }
+ try{
+  localContext=await network.bootstrap();
+  if(localContext)wifiSupported=localContext.capabilities?.includes('wifi_management_v1');
+  if(wifiSupported){wifiState=await request('/api/wifi/status');if(network.needsWifiSetup(wifiState)){location.replace('/wifi');return;}}
+ }catch(e){toast('连接初始化未完成：'+e.message);}
  await poll();storage();
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();

@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from urllib.parse import urlsplit
 from companion_host.media_transfer import MediaTransfer
 
-ASSETS={'/':'index.html','/index.html':'index.html','/companion.css':'companion.css',
+ASSETS={'/wifi':'wifi.html','/wifi.html':'wifi.html','/wifi.js':'wifi.js','/network.js':'network.js','/':'index.html','/index.html':'index.html','/companion.css':'companion.css',
         '/companion.js':'companion.js','/alpha-codec.js':'alpha-codec.js','/vendor/gifuct.js':'vendor/gifuct.js',
         '/network/ap-mode.jpg':'../main/wifi/assets/ap-mode.jpg',
         '/network/wifi-connecting.jpg':'../main/wifi/assets/wifi-connecting.jpg',

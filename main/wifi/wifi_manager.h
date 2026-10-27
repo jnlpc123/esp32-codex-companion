@@ -32,6 +32,7 @@ void wifi_init(void);
 bool wifi_try_connect_or_enter_ap(void);
 
 bool wifi_is_ready(void);
+bool wifi_requires_setup(void);
 esp_err_t wifi_connect_requested(const char *ssid,const char *password);
 esp_err_t wifi_save_credential_checked(const char *ssid,const char *password);
 bool wifi_setup_ignored(void);

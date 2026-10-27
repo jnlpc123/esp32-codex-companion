@@ -15,12 +15,16 @@
 #include "storage_service.h"
 #include "esp_timer.h"
 #include "wifi_prompt_assets.h"
+#include "wifi_manager.h"
 
 extern const unsigned char _binary_vibe_index_start[], _binary_vibe_index_end[];
 extern const unsigned char _binary_vibe_css_start[], _binary_vibe_css_end[];
 extern const unsigned char _binary_vibe_js_start[], _binary_vibe_js_end[];
 extern const unsigned char _binary_vibe_gif_start[], _binary_vibe_gif_end[];
 extern const unsigned char _binary_vibe_alpha_start[], _binary_vibe_alpha_end[];
+extern const unsigned char _binary_vibe_wifi_start[], _binary_vibe_wifi_end[];
+extern const unsigned char _binary_vibe_wifi_js_start[], _binary_vibe_wifi_js_end[];
+extern const unsigned char _binary_vibe_network_js_start[], _binary_vibe_network_js_end[];
 static httpd_handle_t s_server;
 
 httpd_handle_t get_file_server_handle(void) { return s_server; }
@@ -65,7 +69,17 @@ static esp_err_t serve(httpd_req_t *req)
         !strcmp(req->uri,"/network/wifi-connected.jpg")?WIFI_PROMPT_SUCCESS:WIFI_PROMPT_NONE;
     if(prompt){const uint8_t *data;size_t bytes;if(wifi_prompt_asset(prompt,&data,&bytes)){httpd_resp_set_type(req,"image/jpeg");return httpd_resp_send(req,(const char*)data,bytes);}}
 
+    bool home=!strcmp(req->uri,"/")||!strcmp(req->uri,"/index.html");
+    bool probe=!strcmp(req->uri,"/generate_204")||!strcmp(req->uri,"/gen_204")||
+        !strcmp(req->uri,"/hotspot-detect.html")||!strcmp(req->uri,"/connecttest.txt")||!strcmp(req->uri,"/ncsi.txt")||!strcmp(req->uri,"/redirect");
+    if((home||probe)&&wifi_requires_setup()){
+        httpd_resp_set_status(req,"302 Found");httpd_resp_set_hdr(req,"Location","/wifi");
+        httpd_resp_set_hdr(req,"Cache-Control","no-store");return httpd_resp_send(req,NULL,0);
+    }
     if (!strcmp(req->uri, "/") || !strcmp(req->uri, "/index.html")) { start = _binary_vibe_index_start; end = _binary_vibe_index_end; type = "text/html; charset=utf-8"; }
+    else if (!strcmp(req->uri,"/wifi")||!strcmp(req->uri,"/wifi.html")) {start=_binary_vibe_wifi_start;end=_binary_vibe_wifi_end;type="text/html; charset=utf-8";}
+    else if (!strcmp(req->uri,"/wifi.js")) {start=_binary_vibe_wifi_js_start;end=_binary_vibe_wifi_js_end;type="application/javascript";}
+    else if (!strcmp(req->uri,"/network.js")) {start=_binary_vibe_network_js_start;end=_binary_vibe_network_js_end;type="application/javascript";}
     else if (!strcmp(req->uri, "/companion.css")) { start = _binary_vibe_css_start; end = _binary_vibe_css_end; type = "text/css"; }
     else if (!strcmp(req->uri, "/companion.js")) { start = _binary_vibe_js_start; end = _binary_vibe_js_end; type = "application/javascript"; }
     else if (!strcmp(req->uri, "/vendor/gifuct.js")) { start = _binary_vibe_gif_start; end = _binary_vibe_gif_end; type = "application/javascript"; }

@@ -7,7 +7,7 @@ python .\companion_host\bridge.py --resume
 python .\companion_host\bridge.py --status
 ```
 
-打开 http://127.0.0.1:17831/。connected:true、transport:usb、management_available:true 表示已连接。浏览器页面、文件转换和 USB 传输都在本机完成，无需设备连上路由器。电脑包必须携带 web 目录的五项资源，不可仅复制 bridge.py。
+打开 http://127.0.0.1:17831/。connected:true、transport:usb、management_available:true 表示已连接。浏览器页面、文件转换和 USB 传输都在本机完成，无需设备连上路由器。电脑包必须携带 完整 web 目录（包含独立配网页及共享脚本），不可仅复制 bridge.py。
 
 设备原 Wi-Fi 后台仍可使用；状态同步继续 USB 优先、Wi-Fi 备用。USB 管理不会自动转到 Wi-Fi，拔线后显示错误；重新接入并刷新可恢复。换板后重新选择文件，旧上传不能直接发到新板。桥接重启使旧页面令牌失效，刷新页面即可。更换端口可在 companion_host/config.json 合并 management_port，保留其他已有字段。1.2 新增 USB 配网；旧设备需要同时升级应用和电脑桥接，页面会按能力显示配网入口。
 
@@ -17,7 +17,7 @@ python .\companion_host\bridge.py --status
 
 ## Wi-Fi 与离线使用
 
-展开“连接与诊断”，填写 2.4 GHz 网络名称和密码，点击“连接并保存”。无需把电脑切换到设备热点。页面显示真实连接状态和取得的 IP；失败可重试，原保存凭据保留。成功图显示约2秒后恢复动画并关闭AP，不重启设备；电脑与设备处于同一局域网时，用设备IP访问Wi-Fi后台。
+点击顶部“网络设置”，填写 2.4 GHz 网络名称和密码，点击“连接并保存”。无需把电脑切换到设备热点。页面显示真实连接状态和取得的 IP；失败可重试，原保存凭据保留。成功图显示约2秒后恢复动画并关闭AP，不重启设备；电脑与设备处于同一局域网时，用设备IP访问Wi-Fi后台。
 
 中屏恢复原作者的 AP、连接中、成功提示图，图像保存在应用中，不占上传空间。“忽略配网提示（离线使用）”立即恢复前景显示，选项重启保持；它只影响提示，不删除网络记录，AP仍可用于以后配网。
 
@@ -57,3 +57,7 @@ USB 写入通过后台任务完成，电脑分次查询进度，避免垃圾回�
 默认 `npm test` 需要 Python、Node 与 GCC/Clang 或 Zig；Windows 可设置 ZIG 指向 zig.exe。设置 VIBE_VALIDATION_REPORT 为绝对 JSON 路径可生成测试结果；仅干净提交的结果可用于发布打包，失败运行使旧报告失效。
 
 硬件脚本不在默认入口中。先暂停桥接，用 `python tests/hardware/verify_usb_storage.py --port <串口> --expected-device <device_id> --temporary-upload` 检查分页、临时分块上传、完整读回、重复结束、回滚及配置保持；结束后恢复桥接。脚本不删除原素材、不激活测试导入。删除按钮、物理拔插、路由器断网、声音与长时间运行需另做实机验收。
+
+## 独立配网页
+
+`/wifi` 只处理网络：名称、密码、连接结果和离线使用。热点首次/换网未联网且未忽略时，设备根路径自动进入此页；USB管理页同样引导。联网后访问设备IP根路径直接进入管理页，顶部可再次打开网络设置。AP配网成功后，手机/电脑需切回路由器Wi-Fi，再打开页面提供的新IP；USB可直接返回同源管理页。
