@@ -129,6 +129,7 @@ static void jpeg_tests(void)
     assert(display_jpeg_decode_into("frame.jpg",pixels,25600,&w,&h)==ESP_FAIL);assert(!used);remove("frame.jpg");
 }
 static uint16_t lcd[3][160*160],scene[160*160];
+static unsigned draw_calls[3];
 static companion_visual_t visual={.background=0x07e0,.foreground_size=132,.revision=1,.count=5,.active=true};
 static unsigned source_w=80,source_h=80;
 static display_rotation_t rotation;
@@ -139,6 +140,7 @@ esp_lcd_panel_handle_t get_display_panel(int channel){assert(channel>=1&&channel
 esp_err_t display_draw_bitmap_sync(esp_lcd_panel_handle_t panel,int x,int y,int end_x,int end_y,const void *buffer)
 {
     assert((uintptr_t)panel>=1&&(uintptr_t)panel<=3&&x>=0&&y>=0&&end_x<=160&&end_y<=160&&end_x>x&&end_y>y);
+    draw_calls[(uintptr_t)panel-1]++;
     unsigned w=end_x-x;const uint16_t *p=buffer;
     for(int row=y;row<end_y;row++)memcpy(lcd[(uintptr_t)panel-1]+row*160+x,p+(row-y)*w,w*2);
     return ESP_OK;
@@ -153,7 +155,7 @@ esp_err_t alpha_cache_decode_file_mode(const char *path,uint16_t *out,size_t cap
 // Build a logical unrotated scene, then independently rotate every screen pixel.
 static void scene_check(int channel,bool image)
 {
-    uint16_t bg=__builtin_bswap16(visual.background);
+    uint16_t bg=image?__builtin_bswap16(visual.background):0;
     for(unsigned i=0;i<160*160;i++)scene[i]=bg;
     if(image){
         unsigned dw=visual.foreground_size>132?132:visual.foreground_size,dh=dw;
@@ -165,7 +167,12 @@ static void scene_check(int channel,bool image)
             scene[(top+y)*160+left+x]=(uint16_t)(i*713+17);
         }
     }
-    int n=visual.count<5?visual.count:5;
+    if(!image){
+        // Independent golden: a centered 24px cross, 2px strokes, gray on black.
+        for(unsigned y=68;y<92;y++)for(unsigned x=68;x<92;x++)
+            if(x==79||x==80||y==79||y==80)scene[y*160+x]=__builtin_bswap16(0x8c51);
+    }
+    int n=image?(visual.count<5?visual.count:5):0;
     for(int i=0;i<n;i++){
         int dx=-(n-1)*7+i*14,cx=80+dx,cy=144-(dx*dx+74)/148;
         for(int y=-5;y<=5;y++)for(int x=-5;x<=5;x++){
@@ -187,6 +194,15 @@ static void scene_check(int channel,bool image)
 static void composition_tests(void)
 {
     assert(!used);peak=0;assert(companion_render_init()==ESP_OK);assert(used==51200);
+    // Empty panels ignore task colors/counts; no media must never leave old dots.
+    for(int ch=1;ch<=3;ch++)for(unsigned r=0;r<360;r+=90){
+        rotation=(display_rotation_t)r;
+        assert(companion_render_frame(ch,NULL)==ESP_OK);scene_check(ch,false);
+        unsigned previous_draws=draw_calls[ch-1];
+        visual.background^=0xffff;visual.count=9999;visual.revision++;
+        assert(companion_render_frame(ch,NULL)==ESP_OK);scene_check(ch,false);
+        assert(draw_calls[ch-1]==previous_draws); // Status heartbeats do not resend a static placeholder.
+    }
     const unsigned sizes[][2]={{80,80},{160,50},{40,160},{1,1},{132,131},{131,132},{160,160}};
     const int foreground_sizes[]={80,112,132,144};
     // No revision change across rotations: renderer must invalidate its own layout cache.
