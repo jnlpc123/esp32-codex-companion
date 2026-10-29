@@ -20,6 +20,7 @@ static uint16_t s_background[3];
 _Static_assert(CANVAS_PIXELS-FOREGROUND_PIXELS >= FOOTER_PIXELS,"Footer must not overwrite foreground");
 static int s_size[3],s_dots[3];
 static display_rotation_t s_rotation[3];
+static bool s_empty[3];
 
 // Rotate a logical panel rectangle, including its position, around the screen.
 static void rotate_rect(display_rotation_t rotation,int *x,int *y,int *w,int *h)
@@ -98,19 +99,33 @@ esp_err_t companion_render_frame(int channel, const char *path)
     int index = channel - 1;
     display_rotation_t rotation=display_get_rotation();
     if(rotation!=DISPLAY_ROTATION_0&&rotation!=DISPLAY_ROTATION_90&&rotation!=DISPLAY_ROTATION_180&&rotation!=DISPLAY_ROTATION_270)return ESP_ERR_INVALID_ARG;
-    bool cleared = !s_revision[index] || s_rotation[index]!=rotation || s_background[index]!=visual.background || s_size[index]!=visual.foreground_size || (!path&&s_width[index]);
+    if(!path){
+        if(!s_revision[index]||!s_empty[index]){
+            // Match the management page's empty-media placeholder. Reuse the
+            // canvas; the centered cross is invariant under quarter rotations.
+            memset(s_canvas,0,CANVAS_PIXELS*2);
+            for(int y=68;y<92;y++)for(int x=68;x<92;x++)
+                if(x==79||x==80||y==79||y==80)s_canvas[y*DISPLAY_WIDTH+x]=__builtin_bswap16(0x8c51);
+            esp_err_t ret=display_draw_bitmap_sync(get_display_panel(channel),0,0,DISPLAY_WIDTH,DISPLAY_HEIGHT,s_canvas);
+            if(ret!=ESP_OK)return ret;
+            s_empty[index]=true;s_width[index]=s_height[index]=0;
+        }
+        s_revision[index]=visual.revision;
+        return ESP_OK;
+    }
+    bool cleared = !s_revision[index] || s_empty[index] || s_rotation[index]!=rotation || s_background[index]!=visual.background || s_size[index]!=visual.foreground_size;
     if (cleared) {
         esp_err_t ret = background(channel, visual.background, false);
         if (ret != ESP_OK) return ret;
         s_background[index]=visual.background;s_size[index]=visual.foreground_size;s_rotation[index]=rotation;
         s_width[index] = s_height[index] = 0;
+        s_empty[index]=false;
     }
     if(cleared||s_dots[index]!=visual.count){
         esp_err_t ret=footer(channel,visual,rotation);if(ret!=ESP_OK)return ret;
         s_dots[index]=visual.count;
     }
     s_revision[index]=visual.revision;
-    if (!path) return ESP_OK;
     uint16_t width = 0, height = 0;
     const char *ext = strrchr(path, '.');
     esp_err_t ret;

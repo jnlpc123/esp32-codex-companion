@@ -232,6 +232,7 @@ async function init(){
    for(const position of taskDotLayout(status.idle_playing?0:count)){const dot=document.createElement('i');if(position.hollow)dot.className='overflow';dot.style.setProperty('--rise',String(144-position.y));dots.append(dot);}
    let label=card.querySelector('.task-count');if(!label){label=document.createElement('p');label.className='task-count';lamp.after(label);}label.textContent=status.idle_playing?'空闲播放':count+' 个任务'+(active?'':' · 暂停');
    const dir=status.config.media[i];const image=card.querySelector('img');
+   if(!dir){lamp.style.background='#000';dots.replaceChildren();label.textContent='未导入素材';}
    const network=i===1?wifiState?.displayed_prompt:null;
    const networkImages={ap:'ap-mode.jpg',connecting:'wifi-connecting.jpg',success:'wifi-connected.jpg'};
    if(networkImages[network]){
