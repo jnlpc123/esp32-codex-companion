@@ -1,6 +1,6 @@
 # 三屏 Codex 编程信号灯：使用说明与换电脑配置
 
-版本：1.2.1 · 2026-10-27，ESP32-C3 三屏伴侣正式固件。适用于当前已改造的同款硬件。
+版本：1.3.0 · 2026-10-29，ESP32-C3 三屏伴侣正式固件。适用于当前已改造的同款硬件。
 
 新版 USB 后台：桥接启动后打开 `http://127.0.0.1:17831/`，无需设备 Wi-Fi 即可管理素材与设置。两个清理按钮的范围、恢复限制、断线处理及端口配置见 [USB 后台与存储管理](docs/usb-management.md)。旧的 Wi-Fi 后台继续保留。
 
@@ -91,7 +91,7 @@ Windows桌面精确检测模式下，已完成会话在Codex前台显示约1秒�
 
 ### 3.1 解压到固定位置
 
-将 `codex-companion-v1.2.1-windows.zip` 完整解压到固定位置，例如 `C:\CodexCompanion`。以下命令在 **PowerShell** 中执行，安装包根目录应直接包含 `companion_host` 文件夹：
+将 `codex-companion-v1.3.0-windows.zip` 完整解压到固定位置，例如 `C:\CodexCompanion`。以下命令在 **PowerShell** 中执行，安装包根目录应直接包含 `companion_host` 文件夹：
 
 ```powershell
 Set-Location "C:\CodexCompanion"
@@ -312,7 +312,7 @@ python .\companion_host\bridge.py --stop    # 临时退出，下次 Hook 仍可�
 
 停用：先 `--pause`，再在 Codex `/hooks` 中禁用仅带 `--vibe-companion` 的条目。确认不再使用后可移除这些条目和程序目录，保留其他 Hooks。不要用整份旧配置覆盖当前配置来卸载。
 
-同一块已安装设备换电脑无需刷机。发行页中的 `codex-companion-v1.2.1-esp32c3.bin` 仅供同款、已有兼容 bootloader/分区表的设备应用更新，偏移 `0x10000`；不是空白芯片的完整量产包。不要整片擦除或覆盖 NVS/SPIFFS，以免丢失设置/素材。裸板初次烧录需另行准备匹配的完整固件布局。
+同一块已安装设备换电脑无需刷机。发行页中的 `codex-companion-v1.3.0-esp32c3.bin` 仅供同款、已有兼容 bootloader/分区表的设备应用更新，偏移 `0x10000`；不是空白芯片的完整量产包。不要整片擦除或覆盖 NVS/SPIFFS，以免丢失设置/素材。裸板初次烧录需另行准备匹配的完整固件布局。
 
 ## 9. 版本与验证依据
 
@@ -323,3 +323,15 @@ python .\companion_host\bridge.py --stop    # 临时退出，下次 Hook 仍可�
 官方配置依据（核对日期 2026-10-25）：[Hooks 与信任审阅](https://learn.chatgpt.com/docs/hooks)、[Codex CLI](https://learn.chatgpt.com/docs/codex/cli)、[Windows 客户端与 CLI 部署](https://learn.chatgpt.com/docs/enterprise/windows-deployment)。这些页面说明官方客户端和 Hooks；本项目的 USB/Wi-Fi 桥接与只读控件匹配属于本固件配套实现。
 
 USB 配网：点击管理页顶部“网络设置”，进入独立配网页填写网络并连接；无需切换电脑 Wi-Fi。中屏显示原AP/连接中/成功图，成功后直接恢复动画。离线时勾选“忽略配网提示”，该选项重启保持。背景灯效已移除，状态颜色和动画联动保留。
+
+## 恢复出厂（1.3）
+
+USB 与 Wi-Fi 后台的“设备维护”中点击“恢复出厂设置”，输入大写 `RESET` 后执行。会删除全部上传素材（含正在显示的三屏）、播放缓存、Wi-Fi凭据、忽略配网选项及显示/提醒/任务范围设置。固件、内置配网图、芯片校准及电脑端的Codex配置和Hook信任保留。普通升级仍保留数据。
+
+设备已经正常运行后，也可长按 BOOT 至少10秒再松开。只有松开后才执行；短按、上电时一直按住均不会恢复出厂。按住BOOT上电仍是原来的烧录下载模式。
+
+导入、清理或配网进行中不接受恢复，请等待完成。提交后不要断电或连续点击；若响应中断，先查看设备是否已经重启。已确认的清理若被断电打断，下次启动继续执行。硬件Flash/NVS损坏造成的失败仍需排查或修复。
+
+完成后中屏显示原版AP提示图。USB用户等待桥接重新连接后打开 `http://127.0.0.1:17831/wifi`；Wi-Fi用户连接设备 `ESP32_...` 热点，访问 `http://192.168.4.1/`。重新配网并导入素材即可。也可在USB配网页选择忽略配网，继续离线使用。
+
+**Windows桥接与固件应一起更新至1.3或更高**，旧桥接不能转发新恢复指令。更新后重启桥接、刷新本地页面。

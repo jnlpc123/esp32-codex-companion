@@ -7,6 +7,15 @@ class Peer:
     def request(self,op,**fields):self.calls.append((op,fields));return dict(ok=True,op=op)
 
 class QueueTests(unittest.TestCase):
+    def test_factory_reset_delivered_once_by_serial_owner(self):
+        q=ManagementQueue();q.set_device('A','usb',['factory_reset_v1']);p=Peer();answers=[];errors=[]
+        def submit():
+            try:answers.append(q.submit('A','factory_reset',dict(confirm='FACTORY_RESET',device_id='A'),1))
+            except Exception as e:errors.append(str(e))
+        t=threading.Thread(target=submit);t.start();time.sleep(.02)
+        self.assertEqual(p.calls,[]);q.process_one(p,'A','usb');q.process_one(p,'A','usb');t.join()
+        self.assertEqual(errors,[]);self.assertEqual(len(answers),1)
+        self.assertEqual(p.calls,[('factory_reset',dict(confirm='FACTORY_RESET',device_id='A'))])
     def test_only_owner_executes(self):
         q=ManagementQueue();q.set_device('A','usb',['storage_v1']);p=Peer();result=[]
         t=threading.Thread(target=lambda:result.append(q.submit('A','storage_info',{},1)));t.start()

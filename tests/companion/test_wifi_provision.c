@@ -8,6 +8,10 @@
 #undef malloc
 #undef free
 static bool ready,task_failure;static esp_err_t connect_result,save_result;
+static bool maintenance,service_locked;
+bool storage_service_lock(void){if(service_locked)return false;service_locked=true;return true;}
+void storage_service_unlock(void){assert(service_locked);service_locked=false;}
+bool storage_maintenance_busy(void){return maintenance;}
 static unsigned saves,restarts,finished;static void (*worker)(void *);static void *argument;static size_t allocated;
 void *fixture_malloc(size_t size){allocated=size;return malloc(size);}
 void fixture_free(void *p){for(size_t i=0;i<allocated;i++)assert(!((unsigned char *)p)[i]);free(p);}
@@ -36,6 +40,8 @@ int main(void){
  assert(!wifi_provision_valid("home","gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"));
  uint32_t id=0;assert(wifi_provision_begin("home","12345678",&id)==ESP_ERR_INVALID_STATE);
  ready=true;assert(wifi_provision_begin("home","short",&id)==ESP_ERR_INVALID_ARG);
+ maintenance=true;assert(wifi_provision_begin("home","12345678",&id)==ESP_ERR_INVALID_STATE);assert(!worker);maintenance=false;
+ service_locked=true;assert(wifi_provision_begin("home","12345678",&id)==ESP_ERR_INVALID_STATE);service_locked=false;
  task_failure=true;assert(wifi_provision_begin("home","12345678",&id)==ESP_ERR_NO_MEM);task_failure=false;
  assert(wifi_provision_begin("home","12345678",&id)==ESP_OK);assert(id);
  wifi_provision_status_t state;wifi_provision_status(&state);assert(state.busy&&state.state==WIFI_SETUP_CONNECTING);

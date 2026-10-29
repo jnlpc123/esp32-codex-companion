@@ -15,6 +15,7 @@
 #include "esp_spiffs.h"
 #include "fast_read.h"
 #include "storage_service.h"
+#include "factory_reset.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <stdio.h>
@@ -194,7 +195,7 @@ esp_err_t companion_init(void)
     s_config_lock = xSemaphoreCreateMutex();
     if (!s_lock || !s_config_lock) return ESP_ERR_NO_MEM;
     s_config = (companion_config_t){.volume=40, .foreground_size=112, .brightness=60, .colors={0xf800,0xffe0,0x07e0},
-        .media={"/data/1", "/data/2_cleaned", "/data/3_cleaned"},.idle_playback=IDLE_PLAYBACK_BLACK,.idle_done_delay=10};
+        .idle_playback=IDLE_PLAYBACK_BLACK,.idle_done_delay=10};
     esp_err_t ret = nvs_open("companion", NVS_READWRITE, &s_nvs);
     if (ret != ESP_OK) return ret;
     s_boot_id=esp_random();
@@ -381,7 +382,21 @@ esp_err_t companion_handle_json(const char *input, bool usb, char *output, size_
         (version && (!cJSON_IsNumber(version) || version->valuedouble != 1)) || !cJSON_IsString(op)) error = "invalid protocol v1 command";
     if (!error) {
         const char *command = op->valuestring;
-        if(usb&&(compact=wifi_control_command(request,reply,&error))){}
+        if(!strcmp(command,"factory_reset")){
+            compact=true;
+            cJSON *confirm=cJSON_GetObjectItemCaseSensitive(request,"confirm"),*target=cJSON_GetObjectItemCaseSensitive(request,"device_id");
+            uint8_t mac[6];char identity[13]={0};
+            if(esp_read_mac(mac,ESP_MAC_WIFI_STA)==ESP_OK)
+                snprintf(identity,sizeof(identity),"%02x%02x%02x%02x%02x%02x",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
+            if(!cJSON_IsString(confirm)||strcmp(confirm->valuestring,"FACTORY_RESET")||!cJSON_IsString(target)||!*identity||strcmp(target->valuestring,identity))
+                error="factory reset requires confirmation and matching device_id";
+            else if(factory_reset_begin()!=ESP_OK)error="reset not started: upload, cleanup or Wi-Fi setup busy, or confirmation could not be saved";
+            else{
+                cJSON *reset=cJSON_AddObjectToObject(reply,"reset");
+                cJSON_AddBoolToObject(reset,"pending",true);cJSON_AddNumberToObject(reset,"restart_ms",750);
+            }
+        }
+        else if(usb&&(compact=wifi_control_command(request,reply,&error))){}
         else if((compact=storage_service_command(request,reply,&error))){}
         else if(!strcmp(command,"clear_media")){clear_media(request,reply,&error);compact=true;}
         else if(!strcmp(command,"cleanup_status")){
@@ -485,6 +500,7 @@ esp_err_t companion_handle_json(const char *input, bool usb, char *output, size_
             cJSON_AddItemToArray(caps,cJSON_CreateString("storage_v1"));cJSON_AddItemToArray(caps,cJSON_CreateString("usb_media_v1"));
             cJSON_AddItemToArray(caps,cJSON_CreateString("storage_async_v1"));
             cJSON_AddItemToArray(caps,cJSON_CreateString("wifi_management_v1"));
+            cJSON_AddItemToArray(caps,cJSON_CreateString("factory_reset_v1"));
         }
         cJSON_AddStringToObject(reply,"alpha_format","vaf1");
         if(pruned>=0)cJSON_AddNumberToObject(reply,"cache_files_removed",pruned);

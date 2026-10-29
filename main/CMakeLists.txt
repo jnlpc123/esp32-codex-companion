@@ -2,7 +2,7 @@ idf_component_register(SRCS
     "main.c" "display/backlight.c" "display/display_init.c"
     "display/animation_cache.c" "display/animation_crc.c" "display/companion_render.c" "display/alpha_cache.c" "display/jpeg_decode.c"
     "../tests/companion/alpha_cache_selftest.c"
-    "settings/settings.c" "storage/mount.c" "storage/fast_read.c" "storage/media_storage.c" "storage/storage_service.c"
+    "settings/settings.c" "settings/factory_reset.c" "storage/mount.c" "storage/fast_read.c" "storage/media_storage.c" "storage/storage_service.c"
     "core/app_tasks.c" "companion/companion.c" "companion/task_status.c" "companion/usb_link.c" "companion/notify_tone.c"
     "audio/es8311.c" "wifi/wifi_manager.c" "wifi/wifi_provision.c" "wifi/wifi_credentials.c" "wifi/wifi_control.c" "wifi/wifi_prompt_assets.c" "wifi/captive_portal.c" "dns_server/dns_server.c"
     "file_server/file_server.c" "file_server/import_transaction.c" "file_server/file_server_wifi.c" "file_server/file_server_sysinfo.c"

@@ -1,6 +1,7 @@
 const {spawnSync}=require('node:child_process'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const root=path.resolve(__dirname,'../..'),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vibe-wifi-test-'));
 const headers={
+ 'storage_service.h':'#pragma once\n#include <stdbool.h>\nbool storage_service_lock(void);void storage_service_unlock(void);bool storage_maintenance_busy(void);\n',
  'esp_err.h':'#pragma once\ntypedef int esp_err_t;\n#define ESP_OK 0\n#define ESP_FAIL -1\n#define ESP_ERR_INVALID_ARG 1\n#define ESP_ERR_INVALID_STATE 2\n#define ESP_ERR_NO_MEM 3\n',
  'esp_system.h':'#pragma once\nvoid esp_restart(void);\n',
  'wifi_manager.h':'#pragma once\n#include <stdbool.h>\n#include "esp_err.h"\nbool wifi_is_ready(void);\nesp_err_t wifi_connect_requested(const char *,const char *);\nesp_err_t wifi_save_credential_checked(const char *,const char *);\n',
