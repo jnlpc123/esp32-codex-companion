@@ -128,19 +128,19 @@ static void jpeg_tests(void)
     bytes[3]=0xc2;f=fopen("frame.jpg","wb");fwrite(bytes,1,sizeof(bytes),f);fclose(f);
     assert(display_jpeg_decode_into("frame.jpg",pixels,25600,&w,&h)==ESP_FAIL);assert(!used);remove("frame.jpg");
 }
-static uint16_t lcd[160*160];
+static uint16_t lcd[3][160*160],scene[160*160];
 static companion_visual_t visual={.background=0x07e0,.foreground_size=132,.revision=1,.count=5,.active=true};
 static unsigned source_w=80,source_h=80;
 static display_rotation_t rotation;
 static void *canvas;
-void companion_get_visual(int channel,companion_visual_t *out){assert(channel==1);*out=visual;}
+void companion_get_visual(int channel,companion_visual_t *out){assert(channel>=1&&channel<=3);*out=visual;}
 display_rotation_t display_get_rotation(void){return rotation;}
-esp_lcd_panel_handle_t get_display_panel(int channel){assert(channel==1);return (void *)1;}
+esp_lcd_panel_handle_t get_display_panel(int channel){assert(channel>=1&&channel<=3);return (void *)(uintptr_t)channel;}
 esp_err_t display_draw_bitmap_sync(esp_lcd_panel_handle_t panel,int x,int y,int end_x,int end_y,const void *buffer)
 {
-    assert(panel==(void *)1&&x>=0&&y>=0&&end_x<=160&&end_y<=160&&end_x>x&&end_y>y);
+    assert((uintptr_t)panel>=1&&(uintptr_t)panel<=3&&x>=0&&y>=0&&end_x<=160&&end_y<=160&&end_x>x&&end_y>y);
     unsigned w=end_x-x;const uint16_t *p=buffer;
-    for(int row=y;row<end_y;row++)memcpy(lcd+row*160+x,p+(row-y)*w,w*2);
+    for(int row=y;row<end_y;row++)memcpy(lcd[(uintptr_t)panel-1]+row*160+x,p+(row-y)*w,w*2);
     return ESP_OK;
 }
 uint16_t alpha_cache_gray(uint16_t v){return v;}
@@ -150,38 +150,68 @@ esp_err_t alpha_cache_decode_file_mode(const char *path,uint16_t *out,size_t cap
     for(unsigned i=0;i<source_w*source_h;i++)out[i]=(uint16_t)(i*713+17);
     info->width=source_w;info->height=source_h;return ESP_OK;
 }
+// Build a logical unrotated scene, then independently rotate every screen pixel.
+static void scene_check(int channel,bool image)
+{
+    uint16_t bg=__builtin_bswap16(visual.background);
+    for(unsigned i=0;i<160*160;i++)scene[i]=bg;
+    if(image){
+        unsigned dw=visual.foreground_size>132?132:visual.foreground_size,dh=dw;
+        if(source_w>source_h)dh=source_h*dw/source_w;else if(source_h>source_w)dw=source_w*dh/source_h;
+        if(!dw)dw=1;if(!dh)dh=1;
+        unsigned left=(160-dw)/2,top=(144-dh)/2;if(top+dh>132)top=132-dh;
+        for(unsigned y=0;y<dh;y++)for(unsigned x=0;x<dw;x++){
+            unsigned i=y*source_h/dh*source_w+x*source_w/dw;
+            scene[(top+y)*160+left+x]=(uint16_t)(i*713+17);
+        }
+    }
+    int n=visual.count<5?visual.count:5;
+    for(int i=0;i<n;i++){
+        int dx=-(n-1)*7+i*14,cx=80+dx,cy=144-(dx*dx+74)/148;
+        for(int y=-5;y<=5;y++)for(int x=-5;x<=5;x++){
+            int d=x*x+y*y;
+            if(d<=25&&(!(visual.count>5&&i==4)||d>=9))scene[(cy+y)*160+cx+x]=__builtin_bswap16((uint16_t)~visual.background);
+        }
+    }
+    for(unsigned y=0;y<160;y++)for(unsigned x=0;x<160;x++){
+        unsigned dx=x,dy=y;
+        if(rotation==90){dx=159-y;dy=x;}
+        else if(rotation==180){dx=159-x;dy=159-y;}
+        else if(rotation==270){dx=y;dy=159-x;}
+        if(lcd[channel-1][dy*160+dx]!=scene[y*160+x]){
+            fprintf(stderr,"Scene mismatch ch=%d rot=%d at logical %u,%u count=%d image=%d\n",channel,(int)rotation,x,y,visual.count,image);assert(false);
+        }
+    }
+    assert(used==51200&&peak==51200);
+}
 static void composition_tests(void)
 {
     assert(!used);peak=0;assert(companion_render_init()==ESP_OK);assert(used==51200);
     const unsigned sizes[][2]={{80,80},{160,50},{40,160},{1,1},{132,131},{131,132},{160,160}};
-    for(unsigned r=0;r<360;r+=90)for(unsigned s=0;s<sizeof(sizes)/sizeof(*sizes);s++){
+    const int foreground_sizes[]={80,112,132,144};
+    // No revision change across rotations: renderer must invalidate its own layout cache.
+    for(int ch=1;ch<=3;ch++)for(unsigned f=0;f<sizeof(foreground_sizes)/sizeof(*foreground_sizes);f++)for(unsigned r=0;r<360;r+=90)for(unsigned s=0;s<sizeof(sizes)/sizeof(*sizes);s++){
+        visual.foreground_size=foreground_sizes[f];
         rotation=(display_rotation_t)r;source_w=sizes[s][0];source_h=sizes[s][1];
-        unsigned dw=132,dh=132;if(source_w>source_h)dh=source_h*dw/source_w;else if(source_h>source_w)dw=source_w*dh/source_h;
-        if(!dw)dw=1;if(!dh)dh=1;
-        unsigned rw=(r==90||r==270)?dh:dw,rh=(r==90||r==270)?dw:dh;
-        transform(source_w,source_h,dw,dh); // regenerates independent golden
-        for(unsigned y=0;y<dh;y++)for(unsigned x=0;x<dw;x++){
-            size_t index=r==0?y*dw+x:r==180?(dh-1-y)*dw+dw-1-x:frame_rotated_index(y*dw+x,dw,dh,r);
-            expected[index]=original[y*source_h/dh*source_w+x*source_w/dw];
-        }
-        assert(companion_render_frame(1,"frame.a5")==ESP_OK);assert(used==51200&&peak==51200);
-        unsigned left=(160-rw)/2,top=(144-rh)/2;if(top+rh>132)top=132-rh;
-        for(unsigned y=0;y<132;y++)for(unsigned x=0;x<160;x++){
-            uint16_t want=x>=left&&x<left+rw&&y>=top&&y<top+rh?expected[(y-top)*rw+x-left]:__builtin_bswap16(visual.background);
-            assert(lcd[y*160+x]==want);
-        }
-        assert(lcd[144*160+80]==__builtin_bswap16((uint16_t)~visual.background));
+        assert(companion_render_frame(ch,"frame.a5")==ESP_OK);scene_check(ch,true);
+    }
+    const int counts[]={6,1,9999,0,5};
+    for(unsigned r=0;r<360;r+=90)for(unsigned c=0;c<sizeof(counts)/sizeof(*counts);c++){
+        rotation=(display_rotation_t)r;visual.count=counts[c];visual.revision++;
+        assert(companion_render_frame(1,"frame.a5")==ESP_OK);scene_check(1,true);
+        assert(companion_render_frame(1,NULL)==ESP_OK);scene_check(1,false);
+        // Draw again after NULL to check stale bounds/background restoration.
+        assert(companion_render_frame(1,"frame.a5")==ESP_OK);scene_check(1,true);
     }
     uint8_t prompt[32]={0xff,0xd8,0xff,0xc0,0,17,8,0,160,0,160};
     rotation=DISPLAY_ROTATION_0;
     assert(companion_render_prompt(1,prompt,sizeof(prompt))==ESP_OK);
-    assert(lcd[159*160+159]==(uint16_t)(25599*13));assert(used==51200&&peak==51200);
+    assert(lcd[0][159*160+159]==(uint16_t)(25599*13));assert(used==51200&&peak==51200);
     fail_codec=true;assert(companion_render_prompt(1,prompt,sizeof(prompt))==ESP_FAIL);fail_codec=false;
     visual.background=0;visual.revision++;
-    assert(companion_render_frame(1,NULL)==ESP_OK);
+    assert(companion_render_frame(1,NULL)==ESP_OK);scene_check(1,false);
     visual.background=0xffe0;visual.revision++;
-    assert(companion_render_frame(1,NULL)==ESP_OK);
-    assert(lcd[144*160+80]==__builtin_bswap16((uint16_t)~visual.background));
+    assert(companion_render_frame(1,NULL)==ESP_OK);scene_check(1,false);
     fixture_free(canvas);assert(!used);
 }
 static void animation_timing_tests(void)
@@ -200,5 +230,5 @@ static void animation_timing_tests(void)
 int main(void)
 {
     transforms();cache_tests();jpeg_tests();composition_tests();animation_timing_tests();
-    puts("In-place scale/rotation, R5 bounds/CRC/streaming, JPEG ownership and mixed-aspect backgrounds/indicators: PASS");return 0;
+    puts("In-place scale/rotation, R5/JPEG memory and four-angle full-scene dots/foreground on three panels: PASS");return 0;
 }

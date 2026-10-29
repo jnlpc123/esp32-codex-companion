@@ -1,6 +1,6 @@
 {
   "name": "esp32-codex-companion",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "ESP32-C3 three-screen Codex companion",
   "license": "MIT",
