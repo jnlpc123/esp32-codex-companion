@@ -35,6 +35,16 @@ class ServerTests(unittest.TestCase):
         headers=self.auth();headers['X-Vibe-Device']='B'
         self.assertEqual(self.request('/api/companion',body,headers)[0],409)
         self.assertEqual(self.queue.calls,[])
+    def test_factory_reset_requires_capability_and_bound_confirmation(self):
+        body=json.dumps(dict(op='factory_reset',confirm='FACTORY_RESET',device_id='A'))
+        self.assertEqual(self.request('/api/companion',body,self.auth())[0],409)
+        self.assertEqual(self.queue.calls,[])
+        self.queue.capabilities.append('factory_reset_v1')
+        for fields in (dict(confirm='RESET',device_id='A'),dict(confirm='FACTORY_RESET',device_id='B'),dict(confirm='FACTORY_RESET')):
+            self.assertEqual(self.request('/api/companion',json.dumps(dict(op='factory_reset',**fields)),self.auth())[0],400)
+        self.assertEqual(self.queue.calls,[])
+        self.assertEqual(self.request('/api/companion',body,self.auth())[0],200)
+        self.assertEqual(self.queue.calls,[('A','factory_reset',dict(confirm='FACTORY_RESET',device_id='A'))])
     def test_rejects_foreign_origin_and_host(self):
         headers=self.auth();headers['Origin']='https://evil.example'
         self.assertEqual(self.request('/api/companion','{}',headers)[0],403)

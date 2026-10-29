@@ -14,7 +14,7 @@ ASSETS={'/wifi':'wifi.html','/wifi.html':'wifi.html','/wifi.js':'wifi.js','/netw
         '/network/ap-mode.jpg':'../main/wifi/assets/ap-mode.jpg',
         '/network/wifi-connecting.jpg':'../main/wifi/assets/wifi-connecting.jpg',
         '/network/wifi-connected.jpg':'../main/wifi/assets/wifi-connected.jpg'}
-COMMANDS=frozenset(('get','get_catalog','storage_info','storage_list','config','activate','ack','tone','state','clear_media','cleanup_status','prune_cache'))
+COMMANDS=frozenset(('get','get_catalog','storage_info','storage_list','config','activate','ack','tone','state','clear_media','cleanup_status','prune_cache','factory_reset'))
 
 def wifi_credentials(request):
     ssid,password=request.get('ssid'),request.get('password')
@@ -60,6 +60,8 @@ class ManagementServer:
             def query(self,op,fields=None,expected_device=None):
                 state=self.device()
                 if expected_device is not None and state['device_id']!=expected_device:raise ValueError('USB device changed before command delivery')
+                if op=='factory_reset' and 'factory_reset_v1' not in state['capabilities']:
+                    raise ValueError('Device firmware needs factory reset upgrade')
                 if op in ('wifi_status','wifi_configure','wifi_ignore') and 'wifi_management_v1' not in state['capabilities']:
                     raise ValueError('Device firmware needs USB Wi-Fi upgrade')
                 if op not in ('get','get_catalog','config','ack','tone','manual_state','wifi_status','wifi_configure','wifi_ignore') and 'storage_v1' not in state['capabilities']:
@@ -123,6 +125,8 @@ class ManagementServer:
                             if 'usb_media_v1' not in state['capabilities']:raise ValueError('Device firmware needs USB media upgrade')
                             result=owner.transfer.action(device,op,request.get('directory'))
                         elif self.path=='/api/companion' and op in COMMANDS:
+                            if op=='factory_reset' and (request.get('confirm')!='FACTORY_RESET' or request.get('device_id')!=device):
+                                raise ValueError('Invalid factory reset confirmation or device')
                             fields={k:v for k,v in request.items() if k not in ('v','id','op')}
                             if op=='state':op='manual_state'
                             result=self.query(op,fields,device)

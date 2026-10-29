@@ -12,6 +12,7 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "nvs_flash.h"
+#include "factory_reset.h"
 #include "cJSON.h"
 #include "mdns.h"
 #include "esp_mac.h"
@@ -46,6 +47,7 @@ void app_main(void)
 {
     // Never erase user NVS or SPIFFS as an automatic upgrade recovery action.
     ESP_ERROR_CHECK(nvs_flash_init());
+    ESP_ERROR_CHECK(factory_reset_resume());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(example_mount_storage("/data"));

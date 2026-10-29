@@ -47,10 +47,12 @@ with zipfile.ZipFile(windows,'w',zipfile.ZIP_DEFLATED) as archive:
         archive.write(root/'web'/name,'web/'+name)
     archive.write(root/'package.json','package.json')
     archive.write(root/'tests/run-tests.cjs','tests/run-tests.cjs')
-    for name in ('test_host.py','test_multitask.py','test_realtime.py','test_failover.py','test_history_observer.py','test_ui_approval.py','test_management_queue.py','test_usb_media.py','test_local_management.py','test_web.cjs','test_alpha.cjs','test_gif_frames.cjs','test_storage.cjs','test_upload_failure.cjs','test_task_dots.cjs','test_cleanup.cjs','test_media_storage.cjs','test_media_storage.c','test_render_memory.cjs','test_render_memory.c','test_wifi_provision.c','test_wifi_provision.cjs','test_wifi_ui.cjs','test_wifi_credentials.c','test_wifi_credentials.cjs','test_config_migration.cjs','test_network_page.cjs','test_network_route.cjs'):
+    for name in ('test_host.py','test_multitask.py','test_realtime.py','test_failover.py','test_history_observer.py','test_ui_approval.py','test_management_queue.py','test_usb_media.py','test_local_management.py','test_web.cjs','test_alpha.cjs','test_gif_frames.cjs','test_storage.cjs','test_upload_failure.cjs','test_task_dots.cjs','test_cleanup.cjs','test_media_storage.cjs','test_media_storage.c','test_render_memory.cjs','test_render_memory.c','test_wifi_provision.c','test_wifi_provision.cjs','test_wifi_ui.cjs','test_wifi_credentials.c','test_wifi_credentials.cjs','test_config_migration.cjs','test_network_page.cjs','test_network_route.cjs','test_factory_reset.c','test_factory_reset.cjs','test_factory_reset_ui.cjs'):
         archive.write(root/'tests/companion'/name,'tests/companion/'+name)
     for name in ('media_storage.c','media_storage.h','legacy_assets.h'):
         archive.write(root/'main/storage'/name,'main/storage/'+name)
+    for name in ('factory_reset.c','factory_reset.h','factory_reset_button.h'):
+        archive.write(root/'main/settings'/name,'main/settings/'+name)
     for name in ('wifi_provision.c','wifi_provision.h','wifi_manager.h','wifi_manager.c','wifi_prompt.h','wifi_credentials.c','wifi_credentials.h'):
         archive.write(root/'main/wifi'/name,'main/wifi/'+name)
     for name in ('ap-mode.jpg','wifi-connecting.jpg','wifi-connected.jpg'):
@@ -61,7 +63,7 @@ with zipfile.ZipFile(windows,'w',zipfile.ZIP_DEFLATED) as archive:
     for name in ('companion.c','companion.h','task_status.c','task_status.h'):archive.write(root/'main/companion'/name,'main/companion/'+name)
     for name in ('cJSON.c','cJSON.h','LICENSE'):archive.write(root/'components/cjson'/name,'components/cjson/'+name)
     archive.write(root/'docs/usb-management.md','docs/usb-management.md')
-    for name in ('release-1.2.1.md','release-1.2.0.md','network-page-1.2.0-rc.2.md','usb-wifi-1.2.0-rc.1.md','release-1.1.0.md','effects-memory-1.1.0-rc.2.md','usb-storage-1.1.0-rc.1.md','cleanup-acceptance-2026-10-27.md'):
+    for name in ('release-1.3.0.md','release-1.2.1.md','release-1.2.0.md','network-page-1.2.0-rc.2.md','usb-wifi-1.2.0-rc.1.md','release-1.1.0.md','effects-memory-1.1.0-rc.2.md','usb-storage-1.1.0-rc.1.md','cleanup-acceptance-2026-10-27.md'):
         archive.write(root/'docs/validation'/name,'docs/validation/'+name)
     for name in ('使用说明与Codex配置.md','LICENSE','THIRD_PARTY_NOTICES.md','CHANGELOG.md'):archive.write(root/name,name)
     archive.write(root/'distribution/先读我_快速开始.md','先读我_快速开始.md')

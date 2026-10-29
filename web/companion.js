@@ -44,6 +44,13 @@ async function clearMedia(scope,{confirm:ask,send=request}){
 }
 const network=typeof module!=='undefined'?require('./network.js'):root.VibeNetwork;
 const {request,provisionWifi}=network;
+async function factoryReset(device,{prompt:ask,send=request}){
+ if(typeof device!=='string'||!device)throw Error('请先确认连接的设备');
+ if(ask('恢复出厂将删除全部上传素材、Wi-Fi 和自定义设置，重启后重新配网。输入 RESET 确认：')!=='RESET')return null;
+ const result=await send('/api/companion',JSON.stringify({v:1,op:'factory_reset',confirm:'FACTORY_RESET',device_id:device}),device);
+ if(result.reset?.pending!==true)throw Error('未收到恢复出厂确认，请查看设备状态，不要重复提交');
+ return result;
+}
 async function uploadSequence({frames,preview,channel,directory,request:send=request,onProgress=()=>{}}){
  if(!validDirectory(directory)||!Number.isInteger(channel)||channel<1||channel>3||!frames.length||frames.length>256)throw Error('无效的素材或屏幕');
  if(frames.some(f=>!f.blob||f.blob.size<1||f.blob.size>65536))throw Error('单帧图片大小超限');
@@ -102,7 +109,7 @@ function taskDotLayout(count){
  const n=Math.min(5,Math.max(0,Math.floor(Number.isFinite(count)?count:0)));
  return Array.from({length:n},(_,index)=>{const dx=-(n-1)*7+index*14;return {x:80+dx,y:144-Math.floor((dx*dx+74)/148),radius:5,hollow:count>5&&index===4};});
 }
-const api={provisionWifi,request,clearMedia,storageSummary,mediaGroups,timingText,storageRequired,validDirectory,uploadSequence,gifFrames,dotColor565,taskDotLayout,...alpha};
+const api={provisionWifi,request,clearMedia,factoryReset,storageSummary,mediaGroups,timingText,storageRequired,validDirectory,uploadSequence,gifFrames,dotColor565,taskDotLayout,...alpha};
 root.VibeImport=api;if(typeof module!=='undefined')module.exports=api;
 if(typeof document==='undefined')return;
 
@@ -141,11 +148,24 @@ async function decodeFile(file,progress){
 
 async function init(){
  const $=id=>document.getElementById(id),cards=[...document.querySelectorAll('.screen')];
- let latest=null,initialized=false,busy=false,pollTimer=null,wifiState=null,wifiSupported=true,localContext=null;
+ let latest=null,initialized=false,busy=false,pollTimer=null,wifiState=null,wifiSupported=true,localContext=null,resetPending=false;
  const stateLabels={idle:'等你开始',working:'正在工作',waiting:'需要你回应',done:'工作完成'};
  document.querySelector('a[href="#diagnostics"]').addEventListener('click',()=>{$('diagnostics').open=true;});
  function toast(text){const el=$('globalMessage');el.textContent=text;el.hidden=false;setTimeout(()=>{el.hidden=true;},5000);}
  function outputs(){ $('foregroundValue').textContent=$('foregroundSize').value+' px';$('brightnessValue').textContent=$('brightness').value+'%';$('volumeValue').textContent=$('volume').value+'%';}
+ $('factoryReset').addEventListener('click',async()=>{
+  if(busy||!initialized||!latest||resetPending)return;
+  busy=true;
+  try{
+   const result=await factoryReset(latest.device_id,{prompt:text=>window.prompt(text)});
+   if(!result){busy=false;return;}
+   resetPending=true;clearTimeout(pollTimer);
+   document.querySelectorAll('button,input,select').forEach(el=>{el.disabled=true;});
+   $('resetMessage').textContent='已确认，设备正在恢复出厂，请勿断电。USB 用户稍后打开 /wifi；Wi-Fi 用户连接设备热点后访问 192.168.4.1。';
+   const link=$('resetWifi');link.hidden=false;
+   if(!['127.0.0.1','localhost'].includes(location.hostname))link.href='http://192.168.4.1/wifi';
+  }catch(e){busy=false;$('resetMessage').textContent='未确认恢复结果：'+e.message+'。请先查看设备是否重启，不要连续提交。';}
+ });
  let inspectingStorage=false;
  $('storageDetails').addEventListener('toggle',async()=>{
   if(!$('storageDetails').open||inspectingStorage||busy||!latest)return;
@@ -253,12 +273,14 @@ async function init(){
  }
  async function poll(){
   clearTimeout(pollTimer);
+  if(resetPending)return;
   try{
    const status=await request('/api/companion');
+   if(resetPending)return;
    if(wifiSupported)try{wifiState=await request('/api/wifi/status');if(!busy&&network.needsWifiSetup(wifiState)){location.replace('/wifi');return;}$('networkSummary').textContent=wifiState.connected?'Wi-Fi 已连接 · '+wifiState.ip:wifiState.ignored?'离线使用 · 可随时配网':'Wi-Fi 未连接';}catch{$('networkSummary').textContent='网络状态暂不可用';}
    show(status);
   }catch{$('usbBadge').textContent='设备网页连接中断';}
-  if(!document.hidden)pollTimer=setTimeout(poll,1500);
+  if(!document.hidden&&!resetPending)pollTimer=setTimeout(poll,1500);
  }
  for(const id of ['foregroundSize','brightness','volume'])$(id).addEventListener('input',outputs);
  document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTimeout(pollTimer);else poll();});
