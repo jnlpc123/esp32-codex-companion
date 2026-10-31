@@ -6,108 +6,113 @@
 
 感谢原项目作者公开硬件设计、软件源码及演示视频，为本项目提供了基础。本仓库在原项目基础上开发 Codex 状态同步与三屏动画功能；原版硬件资料请访问上方开源项目，相关署名与许可说明见文末“来源与许可”。
 
-ESP32-C3 三屏 Codex 状态灯：工作亮绿灯，等待回答或人工授权亮黄灯，完成亮红灯。素材在设备本地播放，USB 优先同步，Wi-Fi 自动备用。
+把 Codex 的任务状态放到桌面上：工作绿灯、等待回应黄灯、完成红灯。支持多个任务独立计数，USB 优先连接，Wi-Fi 备用。
 
-## 功能
+| 屏幕 | 默认含义 |
+| --- | --- |
+| 上屏 · 红 | 有已完成、尚未确认的任务 |
+| 中屏 · 黄 | 等待回答或人工授权 |
+| 下屏 · 绿 | 正在工作 |
 
-- 无素材屏幕显示黑底居中灰色加号；导入后恢复播放，配网提示优先。
-- 三屏独立任务计数、项目/会话筛选，11px 对比色圆点按弧形内移排列。
-- Windows 桌面只读授权检测；查看已完成会话约1秒后自动确认该会话，保留其他未查看完成任务。
-- GIF / PNG / JPG 导入，透明缓存、断电恢复、失败上传回滚及安全缓存清理。
-- 无工作或等待任务后播放三屏动画，黑底/全亮可选；默认完成红灯保留10秒。
-- USB 后台配网与真实连接状态；恢复原中屏配网提示图，可记住“忽略配网提示”离线使用。
-- 三屏动画支持独立、同步与错峰循环；任务圆点与前景布局随0/90/180/270度旋转，背景灯效已移除。
-- 原地缩放/旋转、分块缓存解码和压缩网页；精确回收原版遗留资源，保留用户配置。
-- 完整恢复出厂：后台输入 RESET 确认，或正常运行后长按 BOOT 至少10秒并松开；清除素材、Wi-Fi及自定义设置，重新进入AP配网。
-- 生成不同提示音；保留缺失音频芯片时跳过初始化的兼容处理。
+支持导入自己的 GIF / PNG / JPG，素材保存在设备中，重启后继续使用。**无素材时显示黑底加号**；需要配网时中屏优先显示提示。颜色、亮度、音量和空闲动画可在后台调整。
 
-## 使用
+## 第一次拿到设备
 
-1.2正式版恢复中屏配网提示，支持USB后台配网与离线忽略。首次/换网进入热点时打开独立 `/wifi` 配网页；联网后访问设备IP直接进入管理页，顶部“网络设置”可再次配网。配网成功提示结束后直接恢复动画，无需重启，Wi-Fi后台可直接访问。背景灯效已移除。
+1. 准备已预装本项目固件的设备和 USB 数据线，接到 Windows 电脑；首次使用无需刷机或恢复出厂。
+2. 安装 Python 3 和 Codex 桌面，登录自己的账号。从 [最新正式版](https://github.com/jnlpc123/esp32-codex-companion/releases/latest) 下载 Windows 工具包，解压到固定目录。
+3. 把下方 [安装提示词](#first-use-prompt) 复制给 Codex，让它完成配置。喜欢手动操作可读 [快速开始](distribution/先读我_快速开始.md)。
 
-1.1 正式版新增 USB 本机后台：更新固件与电脑桥接后，执行 `python .\companion_host\bridge.py --resume`，打开 `http://127.0.0.1:17831/`。查询、设置、素材导入及预览均通过 USB，不要求设备连接 Wi-Fi；原设备 Wi-Fi 后台继续保留。桥接重启后请刷新页面。完整操作与限制见 [USB 后台与存储管理](docs/usb-management.md)。正式版 v1.0.0 不具备此后台，请勿只替换网页。
+配好桥接后，打开 **http://127.0.0.1:17831/** 管理设备。首次可选择连接自己的 2.4GHz Wi-Fi，或“暂不配网，离线使用”；图片可以随后导入。
 
-“清除内存”保留当前三屏选择的整组素材，删除其他上传素材及闲置缓存；“全部清除”停止三屏并删除全部上传素材。两者都会先确认，保留 Wi-Fi、亮度、颜色及系统文件。界面中的容量指 Flash 文件系统容量，RAM 单独显示。
+## 日常操作
 
-已安装固件的板子换电脑不需要重新烧录。设备网页：`http://esp32.local/` 或实际局域网IP；首次配网连接 `ESP32_...` 热点，访问 `http://192.168.4.1/`。
-
-Windows 安装 Python 3（已验证3.12）和 Codex 后，将发布包解压到固定目录。阅读只读检测说明并同意后，按以下顺序执行：
+在工具安装目录的 PowerShell 中运行：
 
 ```powershell
-Copy-Item .\distribution\config-templates\desktop.json .\companion_host\config.json
-python .\companion_host\install.py
-# 审阅生成的 review-hooks.json，确认路径正确后：
-python .\companion_host\install.py --install
+python .\companion_host\bridge.py --resume  # 启动或恢复
+python .\companion_host\bridge.py --status  # 查看连接状态
+python .\companion_host\bridge.py --pause   # 暂停同步
 ```
 
-在 Codex CLI 内运行 `/hooks`，审阅、信任并启用带 `--vibe-companion` 的八项定义。重新打开桌面客户端后运行：
+桥接运行时，管理网页可以关闭。Wi-Fi 备用需要电脑与设备处于同一局域网，断开 USB 后设备仍有独立供电。
 
-```powershell
-python .\companion_host\bridge.py --resume
-python .\companion_host\bridge.py --status
-```
+“清除内存”保留当前三屏素材；“全部清除”删除全部上传素材；“恢复出厂”还会清除 Wi-Fi 和自定义设置。删除前请确认范围。
 
-下载仓库源码时，以上模板位于 `distribution/config-templates/`；Windows 发行包中位于 `config-templates/`。已有配置请合并 `ui_approval_detection:true`，不要覆盖其他字段。仅下载新源码不会更新旧目录里正在运行的桥接；先暂停旧桥接，再从新目录安装和恢复。
+<a id="first-use-prompt"></a>
 
-桌面模式应显示 `connected:true`、`approval_source:uia`、`ui_probe_available:true`。发布包的迁移目录可能是 `config-templates/`；以包内快速开始为准。不要复制旧电脑的账号或信任记录。
+## 安装提示词
 
-完整说明：[使用与 Codex 配置](使用说明与Codex配置.md) · [技术说明](COMPANION_README.md) · [协议](API.md) · [更新记录](CHANGELOG.md)。
+面向**首次拿到预装固件设备的 Windows 用户**。提示词包含对本项目 Codex 只读状态检测的授权，请阅读后再使用。
 
-## 复制给 Codex：在另一台电脑部署
-
-适用于**已经烧入本项目固件的设备 + Windows 本地 Codex 桌面客户端**。在新电脑的 Codex 中打开一个可写目录，把下面整个提示词复制进去即可；无需填写旧电脑的用户名、COM10 或 IP。设备用 USB 数据线接入；旧电脑先暂停桥接，避免两台电脑同时控制。
+<details>
+<summary>展开并复制：首次安装与连接</summary>
 
 ```text
-请直接帮我在这台 Windows 电脑部署 ESP32 Codex Companion，让已经刷好固件的三屏设备自动同步本机 Codex 任务状态，不要只给安装教程。
+我第一次使用 ESP32 Codex Companion，拿到的是一台预装本项目固件的三屏设备。请在我的 Windows 电脑上实际完成首次安装、连接和验证，让它同步我自己的 Codex 任务状态，不要只给教程。
 
 项目：https://github.com/jnlpc123/esp32-codex-companion
-当前正式版本：https://github.com/jnlpc123/esp32-codex-companion/releases/tag/v1.3.1
+工具包：https://github.com/jnlpc123/esp32-codex-companion/releases/latest
 
-设备已有固件和素材。本次只部署电脑端，保留设备图片、Wi-Fi、亮度、颜色和动画设置，不刷机、不擦除存储、不上传新素材。
-我同意本项目针对 Codex 的 Windows 只读检测：检测真实授权控件、侧栏等待状态和前台会话标题元数据，用于黄灯和查看完成会话自动确认；不读取聊天正文，不点击或代替我批准。
+设备可能未配网，也可能没有图片。我授权安装本项目电脑端工具、合并本项目 Hooks，并启用只针对 Codex 的 Windows 只读检测（授权控件、侧栏等待状态和前台会话标题元数据），不读取聊天正文，不点击或代替我批准。
 
-请按以下步骤实际操作：
-1. 检查 Windows、当前用户、Python（项目已验证 3.12）、Codex 桌面与 CLI、USB 串口及已有桥接。复用可用环境；如缺依赖，按官方方式安装。不要把桌面安装目录里单独复制出的内部 codex.exe 当成完整 CLI，不复制其他电脑的账号、.codex、Hook 信任记录或 runtime。若不是 Windows 本地环境，先说明未验证的限制，不宣称已完成部署。
-2. 从上面的 v1.3.1 Release 下载 codex-companion-v1.3.1-windows.zip 和 SHA256SUMS.txt，核对 ZIP 的 SHA-256 后，完整解压到当前用户可写的固定目录，例如用户目录下的 CodexCompanion。不要从压缩包或临时目录运行。已有安装时先检查并备份配置，避免重复桥接或覆盖用户设置。先阅读包内“先读我_快速开始.md”和“使用说明与Codex配置.md”，核对实际脚本参数。
-3. 使用包内 config-templates/desktop.json 配置 companion_host/config.json。已有配置则合并 ui_approval_detection:true，保留其他字段。使用本机真实 Python 和安装路径；串口自动发现，不写死 COM10，设备 IP 不沿用其他电脑的地址。Wi-Fi 备用优先让 USB 握手学习设备地址；确需指定时再询问本设备 IP。
-4. 运行 companion_host/install.py 生成 review-hooks.json，检查其中带 --vibe-companion 的 8 项事件及命令路径，再运行 install.py --install。合并时保留原有其他 Hooks，并备份原配置；不要修改安全策略或绕过 Hook 信任。
-5. 需要我登录、审阅信任、重启客户端或操作数据线时，给出简短明确的操作并等我完成。请让我在同一用户的 Codex CLI 中运行 /hooks，审阅、信任并启用本项目的八项定义；不能代我批准，也不能把“已写入 hooks.json”当成“已激活”。不要索取密码、令牌或验证码。
-6. 提醒我重新打开日常使用的 Codex 桌面后，运行 companion_host/bridge.py --resume 和 --status。检查 connected:true、transport:usb、approval_source:uia、ui_probe_available:true。若失败，检查 bridge.log、串口占用、原生 USB 识别及客户端检测兼容性；只修复本项目相关问题。不要启动多个桥接进程，也不要自动添加开机计划任务。
-7. 验证真实 Codex 任务：运行中绿灯；真实问答或人工授权出现时黄灯，普通自动审查不应误亮；完成时红灯，查看对应完成会话约 1 秒后确认其完成标记，其他未查看任务保留。使用自然出现的授权，不制造危险命令或测试授权。无法触发的场景明确标为待验证，网页测试按钮不能代替真实任务验收。
-8. 验证 USB 优先和 Wi-Fi 备用：需同一局域网，拔掉 USB 后板子仍要有独立供电。只有供电条件具备时，再引导我拔插检查 transport 变化；断电不算切换失败，也不算 Wi-Fi 备用通过。迁移时提醒旧电脑暂停桥接。
-9. 最后告诉我安装目录、Python 路径、实际串口、设备网址、检查结果，以及启动、暂停、恢复和查看状态的可复制命令。区分已验证与待验证项目，不上传本机配置或日志到公开仓库。
+1. 检查 Windows、Python、Codex 桌面及用于审阅 Hooks 的完整 Codex CLI；缺依赖时按官方方式安装。下载最新正式版 Windows 工具包与 SHA256SUMS.txt，校验后完整解压到当前用户可写的固定目录，例如用户目录下的 CodexCompanion。核对安装脚本的实际参数。默认不刷机、不恢复出厂、不删除设备已有内容；若固件不兼容，先说明原因。
+2. 让我用 USB 数据线连接目标设备，自动识别串口和身份，多块设备时先让我选择。用 config-templates/desktop.json 创建 companion_host/config.json；已有配置先备份并合并。运行 companion_host/install.py 生成预览，检查带 --vibe-companion 的八项事件和本机命令路径，再运行 install.py --install。让我在同一用户的 Codex CLI 中执行 /hooks，审阅、信任并启用这些定义，随后重新打开日常使用的 Codex 桌面。登录、信任或人工授权必须由我完成；写入配置不等于已生效。
+3. 运行 companion_host/bridge.py --resume 和 --status，确认 connected:true、transport:usb、approval_source:uia、ui_probe_available:true，打开 http://127.0.0.1:17831/。未配网时引导我填写自己的 2.4GHz Wi-Fi，或选择“暂不配网，离线使用”。不要预设串口或设备 IP。
+4. 询问是否导入我自己的 GIF / PNG / JPG，需要时让我选择文件，再从对应屏幕导入并确认保存。没有素材可跳过，黑底加号是正常占位，不要擅自选取电脑中的文件。
+5. 用真实 Codex 任务检查工作、等待和完成的状态与计数；已导入素材时观察绿、黄、红灯。无素材时先看后台状态/计数，把灯色目视验收标为待导入后完成。用自然出现的问答或人工授权验证黄灯，普通自动审查不应误亮；无法触发的项目标为待验证，网页测试按钮不等于任务联动通过。只有已配网且设备可独立供电时再测 USB/Wi-Fi 切换。
+6. 保持一个桥接进程，不自动创建开机计划任务。最后给我实际安装目录、Python 路径、设备版本与串口、后台网址、已验证/待验证项，以及启动、暂停、恢复、查看状态的可复制命令。不要索取密码、令牌或验证码，不公开本机配置和日志。
 
-除上述必须由我完成的交互外，请持续执行到连接和可执行的验证完成。若权限或硬件条件阻塞，说明具体阻塞及我需要做的一步，不要假报成功。
+除必须由我完成的交互外，请持续执行到当前条件下可做的安装和验证完成；遇到阻塞说明我需要完成的具体一步，不要假报成功。
 ```
 
-提示词配套 v1.3.1 正式版电脑工具；设备固件保持不变。USB 配网需要同版本固件。实机验证范围及已知限制见 [正式版验证记录](docs/validation/release-1.3.1.md)。当前正式版为 [v1.3.1](https://github.com/jnlpc123/esp32-codex-companion/releases/tag/v1.3.1)。它部署的是电脑桥接，不需要编译固件或安装 ESP-IDF。纯 CLI 的授权判断、macOS/Linux/WSL 和云端任务不在此桌面方案的等效验证范围内。
+</details>
 
-Hook 信任步骤依据 [OpenAI 官方 Hooks 文档](https://learn.chatgpt.com/docs/hooks)；USB/Wi-Fi 桥接及 Windows 只读检测属于本项目实现。
+<a id="uninstall-prompt"></a>
 
-## 构建与测试
+## 卸载电脑端工具
 
-已验证 ESP-IDF 6.1、ESP32-C3、4MB Flash；组件清单及锁文件随源码提供。网页直接嵌入应用，不需要 npm 安装、旧版前端压缩或覆盖 SPIFFS。
+卸载只解除这台电脑与信号灯的绑定，**不影响设备中的固件、素材、Wi-Fi 或设置，也不需要卸载 Codex 和 Python**。
 
-```sh
-idf.py set-target esp32c3
-idf.py build
+1. 在工具安装目录运行 `python .\companion_host\bridge.py --pause`，等待桥接释放串口。
+2. 在 Codex 的 `/hooks` 中停用本工具条目；彻底移除时，先备份实际 Hooks 配置，仅删除同时匹配 `--vibe-companion` 和本安装目录的命令，保留其他 Hooks。
+3. 重新打开 Codex，确认本工具桥接已退出。备份需要保留的工具配置后，可删除专用工具目录；若从源码仓库运行，保留源码及其他工作文件，只清理本工具的本地配置和运行数据。
+
+没有一键卸载脚本。也可以把下方提示词交给 Codex 执行：
+
+<details>
+<summary>展开并复制：卸载电脑端工具</summary>
+
+```text
+请帮我卸载这台 Windows 电脑上的 ESP32 Codex Companion 电脑端工具，保留 Codex、Python、其他 Hooks，以及设备上的固件、素材、Wi-Fi 和设置。
+
+项目：https://github.com/jnlpc123/esp32-codex-companion
+
+1. 先检查安装目录、正在运行的桥接命令路径和本项目 Hooks 来源，确定本次卸载的对象；存在多个安装目录而无法确定时先让我选择。不要仅凭 Python 进程名或 --vibe-companion 标记删除所有内容。
+2. 使用目标安装目录的 companion_host/bridge.py --pause 持续暂停桥接，避免 Hook 再次拉起；根据进程命令路径确认该实例退出、串口已释放，不影响其他 Python 程序。核对脚本支持的参数，项目当前没有 --uninstall 一键命令。
+3. 把即将修改的 Hooks 配置和需要保留的本工具配置备份到安装目录之外。检查实际加载的 Hooks 来源，仅移除命令同时属于本安装目录且带 --vibe-companion 的本项目条目；保留同组其他命令、其他 Hooks、插件和配置。使用审慎的合并写入，不用整份空配置覆盖，不修改全局安全策略或无关信任记录。若来源受组织管理，说明需要管理员处理的具体条目。
+4. 引导我重新打开 Codex 以卸载已加载的 Hook 定义，再确认本项目条目与目标桥接不再生效。若有自启项或计划任务，仅在命令路径确认属于本次安装时移除；不要卸载 Codex、CLI、Python 或共享依赖。
+5. 清理该工具的专用安装目录及其中本项目 runtime。若它同时是源码仓库或包含其他工作文件，保留这些文件，仅清理本工具的本地配置和运行数据；没有活动进程、Hooks 或自启项时，保留源码不影响解除绑定。删除前核对绝对路径，备份不要放在将被删除的目录内。不访问或清空设备存储，不执行恢复出厂。
+6. 最后告诉我移除了哪些条目/文件、备份在哪里，以及退出进程和 Hooks 清理的检查结果。不能完成的部分如实说明，并给出我需要完成的一步；不上传个人配置或日志。
+
+请实际执行卸载，除需要我手动重开客户端或选择目标外，不要只给教程。
 ```
 
-电脑端及网页回归需要 Node.js、Python 3，以及 C 编译器；原生 C 清理测试可用 Zig（`ZIG` 指向 zig.exe）或设置 `CC`。无 npm 第三方依赖：
+</details>
 
-```sh
-npm test
-```
+## 更多说明
 
-更新同款已有兼容引导程序/分区表的设备时，只写应用到 `0x10000`，先暂停桥接，保留 NVS/SPIFFS。发布的应用文件不是空白芯片完整量产镜像。
+- [使用说明与 Codex 配置](使用说明与Codex配置.md)：配网、导入素材、任务范围、卸载和排障。
+- [USB 后台与存储管理](docs/usb-management.md) · [更新记录](CHANGELOG.md) · [技术说明](COMPANION_README.md) · [协议](API.md)。
+- [OpenAI Hooks 官方文档](https://learn.chatgpt.com/docs/hooks)：安装后仍需本人审阅与信任。
 
-## 支持边界
+当前方案主要验证 Windows Codex 桌面的本地任务。纯 CLI 的授权判断可能误判，macOS/Linux/WSL 和云任务不属于等效支持范围。
 
-- 精确人工授权和查看确认针对 Windows Codex 桌面本地任务；CLI 模式可接入事件，但审批推断可能误判慢速自动审查。
-- 同名无法唯一匹配、检测失效、后台或最小化时不会自动确认完成。客户端UI或本地元数据格式变化后需重新验证。
-- 一块板子同一时间由一台电脑控制；Wi-Fi 备用需要同局域网且板子保持供电。
-- 默认112px、合适素材以约30FPS为目标；保留GIF原始停顿，不补帧。无扬声器时实际音效尚未验收。
-- 本包不提供录音、普通音频播放或浏览器画面推送。
+<details>
+<summary>开发与构建</summary>
+
+构建使用 ESP-IDF 6.1、ESP32-C3、4MB Flash。网页嵌入应用，不覆盖设备素材。回归测试运行 `npm test`，需要 Node.js、Python 和 C 编译器（Windows 可设置 `ZIG`）。详细内容见技术说明；首次使用无需安装 ESP-IDF。
+
+</details>
 
 ## 来源与许可
 
