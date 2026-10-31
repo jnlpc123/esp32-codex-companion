@@ -221,9 +221,18 @@ static void composition_tests(void)
     }
     uint8_t prompt[32]={0xff,0xd8,0xff,0xc0,0,17,8,0,160,0,160};
     rotation=DISPLAY_ROTATION_0;
-    assert(companion_render_prompt(1,prompt,sizeof(prompt))==ESP_OK);
-    assert(lcd[0][159*160+159]==(uint16_t)(25599*13));assert(used==51200&&peak==51200);
-    fail_codec=true;assert(companion_render_prompt(1,prompt,sizeof(prompt))==ESP_FAIL);fail_codec=false;
+    // A latched angle controls the complete prompt frame, independently of a
+    // concurrent change to the global setting while JPEG decoding is running.
+    for(int ch=1;ch<=3;ch++)for(int angle=0;angle<360;angle+=90){
+        assert(companion_render_prompt(ch,prompt,sizeof(prompt),angle)==ESP_OK);
+        for(unsigned y=0;y<160;y++)for(unsigned x=0;x<160;x++){
+            unsigned dx=x,dy=y;
+            if(angle==90){dx=159-y;dy=x;}else if(angle==180){dx=159-x;dy=159-y;}else if(angle==270){dx=y;dy=159-x;}
+            assert(lcd[ch-1][dy*160+dx]==(uint16_t)((y*160+x)*13));
+        }
+    }
+    assert(used==51200&&peak==51200);
+    fail_codec=true;assert(companion_render_prompt(1,prompt,sizeof(prompt),0)==ESP_FAIL);fail_codec=false;
     visual.background=0;visual.revision++;
     assert(companion_render_frame(1,NULL)==ESP_OK);scene_check(1,false);
     visual.background=0xffe0;visual.revision++;

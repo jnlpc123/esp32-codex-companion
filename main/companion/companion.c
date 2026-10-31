@@ -37,10 +37,14 @@ static const char *s_last_tone = "none";
 static const char *names[] = {"idle", "working", "waiting", "done"};
 static const char *idle_names[] = {"off", "colors", "black"};
 static const char *link_names[]={"independent","sync","stagger"};
+static const char *signal_names[]={"steady","task_cycle"};
+static const char *sound_names[]={"original","8bit"};
 static int64_t s_animation_epoch;
 static bool s_idle_playing;
 static int64_t s_idle_since_us;
 static uint32_t s_idle_completion_seq;
+static task_signal_t s_signal;
+static task_signal_visual_t s_signal_visual={.waiting_lit=true};
 
 
 static bool connected(int64_t now) { return s_contact_us && now - s_contact_us < 10000000; }
@@ -65,6 +69,11 @@ static vibe_state_t effective(int64_t now){task_counts_t c=effective_counts(now)
 // Called with s_lock held. Heartbeats never restart the completion hold.
 static void update_idle_locked(int64_t now, const task_counts_t *counts)
 {
+    if(s_signal.pattern!=s_config.signal_pattern || s_signal.scope.mode!=s_config.scope.mode ||
+        strcmp(s_signal.scope.target,s_config.scope.target))s_idle_since_us=0;
+    task_signal_visual_t signal=task_signal_update(&s_signal,now,s_config.signal_pattern,counts,&s_config.scope);
+    if(signal.cue_channel!=s_signal_visual.cue_channel || signal.waiting_lit!=s_signal_visual.waiting_lit)s_revision++;
+    s_signal_visual=signal;
     const char *source=transport(now);
     const task_counts_t *synced=!strcmp(source,"usb")?&s_remote_counts:!strcmp(source,"wifi")?&s_wifi_counts:NULL;
     bool eligible=s_config.idle_playback!=IDLE_PLAYBACK_OFF && !counts->working && !counts->waiting &&
@@ -74,7 +83,7 @@ static void update_idle_locked(int64_t now, const task_counts_t *counts)
     else if(!counts->done){s_idle_since_us=0;s_idle_completion_seq=0;playing=true;}
     else {
         if(!s_idle_since_us || s_idle_completion_seq!=counts->completion_seq){
-            s_idle_since_us=now;s_idle_completion_seq=counts->completion_seq;
+            s_idle_since_us=signal.hold_start_us?signal.hold_start_us:now;s_idle_completion_seq=counts->completion_seq;
         }
         playing=s_config.idle_done_delay>=0 && now-s_idle_since_us>=(int64_t)s_config.idle_done_delay*1000000;
     }
@@ -100,9 +109,12 @@ static cJSON *config_json(const companion_config_t *c)
     if (!cJSON_AddNumberToObject(o, "volume", c->volume) ||
         !cJSON_AddNumberToObject(o, "foreground_size", c->foreground_size) ||
         !cJSON_AddNumberToObject(o, "brightness", c->brightness) ||
+        !cJSON_AddNumberToObject(o, "display_rotation", c->display_rotation) ||
         !cJSON_AddBoolToObject(o, "muted", c->muted) ||
+        !cJSON_AddStringToObject(o, "sound_style", sound_names[c->sound_style]) ||
         !cJSON_AddStringToObject(o, "layout", c->all_screens ? "all" : "traffic") ||
         !cJSON_AddStringToObject(o, "idle_playback", idle_names[c->idle_playback]) ||
+        !cJSON_AddStringToObject(o, "signal_pattern", signal_names[c->signal_pattern]) ||
         !cJSON_AddNumberToObject(o, "idle_done_delay", c->idle_done_delay) ||
         !cJSON_AddStringToObject(o,"animation_link",link_names[c->animation_link])) goto failed;
     cJSON *a = cJSON_AddArrayToObject(o, "media");
@@ -142,6 +154,7 @@ static bool parse_config(cJSON *o, companion_config_t *c)
     if (!cJSON_IsObject(o) || !integer_field(o, "volume", 0, 80, &c->volume) ||
         !integer_field(o, "foreground_size", 80, 144, &c->foreground_size) ||
         !integer_field(o, "brightness", 5, 100, &c->brightness) ||
+        !integer_field(o, "display_rotation", 0, 270, &c->display_rotation) || c->display_rotation%90 ||
         !integer_field(o, "idle_done_delay", -1, 300, &c->idle_done_delay)) return false;
     cJSON *link=cJSON_GetObjectItemCaseSensitive(o,"animation_link");
     if(link){
@@ -149,6 +162,20 @@ static bool parse_config(cJSON *o, companion_config_t *c)
         for(int i=0;i<3;i++)if(!strcmp(link->valuestring,link_names[i]))mode=i;
         if(mode<0)return false;
         c->animation_link=(animation_link_t)mode;
+    }
+    cJSON *signal=cJSON_GetObjectItemCaseSensitive(o,"signal_pattern");
+    if(signal){
+        int mode=-1;if(!cJSON_IsString(signal))return false;
+        for(int i=0;i<2;i++)if(!strcmp(signal->valuestring,signal_names[i]))mode=i;
+        if(mode<0)return false;
+        c->signal_pattern=(signal_pattern_t)mode;
+    }
+    cJSON *sound=cJSON_GetObjectItemCaseSensitive(o,"sound_style");
+    if(sound){
+        int style=-1;if(!cJSON_IsString(sound))return false;
+        for(int i=0;i<2;i++)if(!strcmp(sound->valuestring,sound_names[i]))style=i;
+        if(style<0)return false;
+        c->sound_style=(notify_sound_style_t)style;
     }
     cJSON *idle=cJSON_GetObjectItemCaseSensitive(o,"idle_playback");
     if(idle){
@@ -186,16 +213,26 @@ static bool parse_config(cJSON *o, companion_config_t *c)
             strlcpy(c->media[i], item->valuestring, sizeof(c->media[i]));
         }
     }
+    if(c->signal_pattern==SIGNAL_TASK_CYCLE)c->all_screens=false;
     return true;
 }
 
-esp_err_t companion_init(void)
+static bool parse_stored_config(cJSON *o,companion_config_t *c)
+{
+    // A pre-1.4 saved record had only the original sound. Partial live updates
+    // use parse_config directly so they never reset the selected sound style.
+    c->sound_style=NOTIFY_ORIGINAL;
+    return parse_config(o,c);
+}
+
+esp_err_t companion_init(int legacy_rotation)
 {
     s_lock = xSemaphoreCreateMutex();
     s_config_lock = xSemaphoreCreateMutex();
     if (!s_lock || !s_config_lock) return ESP_ERR_NO_MEM;
-    s_config = (companion_config_t){.volume=40, .foreground_size=112, .brightness=60, .colors={0xf800,0xffe0,0x07e0},
+    s_config = (companion_config_t){.volume=30,.sound_style=NOTIFY_8BIT, .foreground_size=112, .brightness=60, .colors={0xf800,0xffe0,0x07e0},
         .idle_playback=IDLE_PLAYBACK_BLACK,.idle_done_delay=10};
+    if(legacy_rotation>=0&&legacy_rotation<=270&&legacy_rotation%90==0)s_config.display_rotation=legacy_rotation;
     esp_err_t ret = nvs_open("companion", NVS_READWRITE, &s_nvs);
     if (ret != ESP_OK) return ret;
     s_boot_id=esp_random();
@@ -204,7 +241,7 @@ esp_err_t companion_init(void)
     if (nvs_get_str(s_nvs, "config", stored, &size) == ESP_OK) {
         cJSON *o = cJSON_ParseWithOpts(stored, NULL, true);
         companion_config_t candidate = s_config;
-        if (o && parse_config(o, &candidate)) {
+        if (o && parse_stored_config(o, &candidate)) {
             s_config = candidate;
             // Canonicalize old schemas once, preserving supported preferences.
             cJSON *normalized=config_json(&s_config);
@@ -260,6 +297,12 @@ void companion_get_visual(int channel, companion_visual_t *v)
     if(role==1&&(c.working||c.waiting))color=(color>>1)&0x7bef;
     v->background=(s_config.all_screens?task_counts_state(&c)!=0:count>0)?color:0x0841;
     v->count=count;v->active=count>0;
+    if(s_config.signal_pattern==SIGNAL_TASK_CYCLE){
+        if(s_signal_visual.cue_channel){
+            v->active=channel==s_signal_visual.cue_channel;
+            v->background=v->active?s_config.colors[channel-1]:0x0841;
+        } else if(channel==2 && c.waiting && !s_signal_visual.waiting_lit)v->background=0x0841;
+    }
     if(s_idle_playing){
         v->background=s_config.idle_playback==IDLE_PLAYBACK_BLACK?0:s_config.colors[channel-1];
         v->count=0;v->active=true;
@@ -309,9 +352,11 @@ static esp_err_t update_config(cJSON *o, bool activate, const char **error)
     if (ret == ESP_OK) {
         xSemaphoreTake(s_lock, portMAX_DELAY);
         if(next.animation_link!=before.animation_link)s_animation_epoch=esp_timer_get_time();
-        s_config = next; s_revision++; xSemaphoreGive(s_lock);
+        s_config = next;
+        if(next.display_rotation!=before.display_rotation)display_set_rotation((display_rotation_t)next.display_rotation);
+        s_revision++; xSemaphoreGive(s_lock);
         storage_note_change();
-        notify_tone_settings(next.volume, next.muted);
+        notify_tone_settings(next.volume, next.muted, next.sound_style);
         display_set_brightness(next.brightness);
         for (int i = 0; i < 3; i++) if (strcmp(next.media[i], before.media[i]) || (activate && i == selected - 1))
             anim_playback_start(next.media[i], i + 1);

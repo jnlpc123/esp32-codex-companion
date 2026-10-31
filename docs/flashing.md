@@ -15,9 +15,9 @@
 
 ## 完整烧录
 
-以 v1.3.1 为例，下载以下附件到同一个文件夹：
+以 v1.4.0 为例，下载以下附件到同一个文件夹：
 
-- `codex-companion-v1.3.1-esp32c3-fullflash.bin`
+- `codex-companion-v1.4.0-esp32c3-fullflash.bin`
 - `fullflash-SHA256SUMS.txt`
 - `fullflash-manifest.json`（组成及校验信息）
 - `fullflash-README.txt`（该版本的操作说明）
@@ -26,14 +26,14 @@
 2. 在下载目录打开 PowerShell，校验镜像；把输出与 `fullflash-SHA256SUMS.txt` 中同名文件的值比较，必须一致。
 
 ```powershell
-Get-FileHash .\codex-companion-v1.3.1-esp32c3-fullflash.bin -Algorithm SHA256
+Get-FileHash .\codex-companion-v1.4.0-esp32c3-fullflash.bin -Algorithm SHA256
 ```
 
 3. 安装官方 esptool。以下命令中的 `COMx` 必须替换为目标设备的实际串口：
 
 ```powershell
 python -m pip install esptool
-python -m esptool --chip esp32c3 --port COMx --baud 460800 write-flash --flash-mode dio --flash-freq 80m --flash-size 4MB 0x0 .\codex-companion-v1.3.1-esp32c3-fullflash.bin
+python -m esptool --chip esp32c3 --port COMx --baud 460800 write-flash --flash-mode dio --flash-freq 80m --flash-size 4MB 0x0 .\codex-companion-v1.4.0-esp32c3-fullflash.bin
 ```
 
 无需额外执行整片擦除。无法自动进入下载模式时，按住 BOOT、短按 RESET、再松开 BOOT 后重试。烧录完成按 RESET；按该版本的使用说明配网、导入自己的素材，并启动对应的 Windows 工具包。全新设备没有动画素材是正常情况。
@@ -45,7 +45,7 @@ python -m esptool --chip esp32c3 --port COMx --baud 460800 write-flash --flash-m
 已安装兼容固件、只需要升级时，继续使用原有应用镜像和 `SHA256SUMS.txt`，**不要使用完整镜像**：
 
 ```powershell
-python -m esptool --chip esp32c3 --port COMx --baud 460800 write-flash --flash-mode dio --flash-freq 80m --flash-size 4MB 0x10000 .\codex-companion-v1.3.1-esp32c3.bin
+python -m esptool --chip esp32c3 --port COMx --baud 460800 write-flash --flash-mode dio --flash-freq 80m --flash-size 4MB 0x10000 .\codex-companion-v1.4.0-esp32c3.bin
 ```
 
 升级后恢复桥接：`python .\companion_host\bridge.py --resume`。跨版本时同时阅读更新日志，电脑端工具建议与所选固件版本配套。

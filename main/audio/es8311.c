@@ -9,6 +9,18 @@
 
 static const char *TAG = "es8311";
 
+// The SDK's default codec scale is 0..100 = -50..0 dB. The UI uses
+// 0..80: give short notifications a useful range while retaining headroom.
+static int codec_volume(int volume)
+{
+    if(volume<=1)return 0;
+    if(volume<20)return (volume-1)*56/19;
+    if(volume<40)return 56+(volume-20)*28/20;
+    if(volume<60)return 84+(volume-40)*8/20;
+    if(volume<80)return 92+(volume-60)*4/20;
+    return 96;
+}
+
 struct es8311_context {
     i2c_master_bus_handle_t i2c_bus_handle;
     const audio_codec_ctrl_if_t *ctrl_if;
@@ -117,7 +129,7 @@ static esp_err_t es8311_codec_init(es8311_handle_t handle, int volume)
     }
 
     /* Set the initial volume */
-    if (esp_codec_dev_set_out_vol(handle->codec_handle, volume) != ESP_CODEC_DEV_OK) {
+    if (esp_codec_dev_set_out_vol(handle->codec_handle, codec_volume(volume)) != ESP_CODEC_DEV_OK) {
         ESP_LOGE(TAG, "set output volume failed");
         return ESP_FAIL;
     }
@@ -217,7 +229,7 @@ esp_err_t es8311_set_volume(es8311_handle_t handle, int volume)
     if (!handle || !handle->codec_handle) {
         return ESP_ERR_INVALID_ARG;
     }
-    return esp_codec_dev_set_out_vol(handle->codec_handle, volume);
+    return esp_codec_dev_set_out_vol(handle->codec_handle, codec_volume(volume));
 }
 
 i2s_chan_handle_t es8311_get_tx_handle(es8311_handle_t handle)

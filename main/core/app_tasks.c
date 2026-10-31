@@ -31,6 +31,7 @@ static TaskHandle_t s_anim_task;
 static volatile uint32_t s_total_frames[3];
 static volatile int s_current_frames[3]={-1,-1,-1};
 static volatile wifi_prompt_t s_network_prompt_drawn;
+static int s_network_prompt_rotation=-1;
 static SemaphoreHandle_t s_gc_lock;
 static volatile bool s_gc_requested;
 static volatile int s_gc_result;
@@ -322,7 +323,7 @@ void AnimTask(void *pvParameters)
         for (int i = 0; i < ANIM_CHANNELS; i++) {
             int ch = (cursor + i) % ANIM_CHANNELS;
             if(ch==1){
-                if(prompt!=WIFI_PROMPT_NONE){if(s_network_prompt_drawn!=prompt){selected=ch;break;}continue;}
+                if(prompt!=WIFI_PROMPT_NONE){if(s_network_prompt_drawn!=prompt||s_network_prompt_rotation!=(int)display_get_rotation()){selected=ch;break;}continue;}
                 if(s_network_prompt_drawn!=WIFI_PROMPT_NONE){selected=ch;revisions[ch]=0;break;}
             }
             companion_visual_t visual;
@@ -341,8 +342,9 @@ void AnimTask(void *pvParameters)
         if (selected < 0) { vTaskDelay(1); continue; }
         if(selected==1&&prompt!=WIFI_PROMPT_NONE){
             const uint8_t *jpeg;size_t bytes;
-            esp_err_t ret=wifi_prompt_asset(prompt,&jpeg,&bytes)?companion_render_prompt(2,jpeg,bytes):ESP_FAIL;
-            if(ret==ESP_OK){s_network_prompt_drawn=prompt;s_current_frames[1]=-2;}
+            int rotation=display_get_rotation();
+            esp_err_t ret=wifi_prompt_asset(prompt,&jpeg,&bytes)?companion_render_prompt(2,jpeg,bytes,rotation):ESP_FAIL;
+            if(ret==ESP_OK){s_network_prompt_drawn=prompt;s_network_prompt_rotation=rotation;s_current_frames[1]=-2;}
             cursor=2;vTaskDelay(1);continue;
         }
         anim_channel_state_t *state = &states[selected];

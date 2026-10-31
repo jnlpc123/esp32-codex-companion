@@ -5,11 +5,13 @@
 #include "esp_err.h"
 #include "task_status.h"
 #include "animation_timing.h"
+#include "task_signal.h"
+#include "notify_tone.h"
 
 typedef enum { VIBE_IDLE, VIBE_WORKING, VIBE_WAITING, VIBE_DONE } vibe_state_t;
 typedef enum { IDLE_PLAYBACK_OFF, IDLE_PLAYBACK_COLORS, IDLE_PLAYBACK_BLACK } idle_playback_t;
 typedef struct {
-    int volume, foreground_size, brightness;
+    int volume, foreground_size, brightness, display_rotation;
     bool muted, all_screens;
     char media[3][48];
     task_scope_t scope;
@@ -17,6 +19,8 @@ typedef struct {
     idle_playback_t idle_playback;
     int idle_done_delay;
     animation_link_t animation_link;
+    signal_pattern_t signal_pattern;
+    notify_sound_style_t sound_style;
 } companion_config_t;
 typedef struct {
     uint16_t background;
@@ -28,7 +32,7 @@ typedef struct {
     uint64_t animation_time_us;
 } companion_visual_t;
 
-esp_err_t companion_init(void);
+esp_err_t companion_init(int legacy_rotation);
 void companion_get_config(companion_config_t *config);
 void companion_restore_media(void);
 void companion_get_visual(int channel, companion_visual_t *visual);

@@ -83,6 +83,9 @@ USB后台提供 GET `/api/wifi/status`、POST `/api/wifi/configure` 和 POST `/a
 | colors | 3个RGB565整数，依次完成、等待、工作 |
 | volume | 0–80 |
 | muted | 布尔值 |
+| sound_style | original / 8bit；新设备默认 8bit，旧配置迁移保留 original |
+| display_rotation | 0 / 90 / 180 / 270；保存后立即应用并持久化；旧配置继承原 config.json 方向 |
+| signal_pattern | steady / task_cycle；默认 steady，task_cycle 使用各屏独立布局 |
 | brightness | 5–100 |
 | foreground_size | 80–144；圆点避让时实际前景最大适配132px |
 | layout | traffic / all |
@@ -105,3 +108,5 @@ USB后台提供 GET `/api/wifi/status`、POST `/api/wifi/configure` 和 POST `/a
 文件限额/命名及CRC由服务器校验，禁止覆盖已有帧及 `_upload.txt` 保留标记。不要直接删除NVS、SPIFFS或当前选中目录。内置 `/audio`、旧 `/display`、WebSocket录音与浏览器画面推送接口不在1.0中提供。
 
 Windows电脑配置与真实任务验证详见 [完整使用说明](使用说明与Codex配置.md)。
+
+动态灯效每步 500ms，红→黄→绿→黄共两轮；完成循环后才开始 idle_done_delay 计时。新工作、等待或清空完成标记会中断循环。config 支持部分更新，音效与灯效字段可分别保存。

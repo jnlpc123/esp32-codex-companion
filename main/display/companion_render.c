@@ -64,7 +64,7 @@ esp_err_t companion_render_init(void)
 bool companion_render_prepare_cache(const char *jpeg_path,char *cache_path,size_t path_size)
 {return animation_cache_prepare_into(jpeg_path,cache_path,path_size,s_canvas,CANVAS_PIXELS);}
 
-esp_err_t companion_render_prompt(int channel,const uint8_t *jpeg,size_t size)
+esp_err_t companion_render_prompt(int channel,const uint8_t *jpeg,size_t size,int rotation)
 {
     if(!s_canvas||channel<1||channel>3||!jpeg||!size||size>65536)return ESP_ERR_INVALID_ARG;
     s_revision[channel-1]=0;
@@ -74,7 +74,7 @@ esp_err_t companion_render_prompt(int channel,const uint8_t *jpeg,size_t size)
     esp_err_t ret=esp_jpeg_decode(&cfg,&image);
     if(ret!=ESP_OK)return ret;
     if(image.width!=DISPLAY_WIDTH||image.height!=DISPLAY_HEIGHT)return ESP_ERR_INVALID_SIZE;
-    if(!frame_rotate(s_canvas,CANVAS_PIXELS,DISPLAY_WIDTH,DISPLAY_HEIGHT,display_get_rotation()))return ESP_FAIL;
+    if(!frame_rotate(s_canvas,CANVAS_PIXELS,DISPLAY_WIDTH,DISPLAY_HEIGHT,rotation))return ESP_FAIL;
     return display_draw_bitmap_sync(get_display_panel(channel),0,0,DISPLAY_WIDTH,DISPLAY_HEIGHT,s_canvas);
 }
 

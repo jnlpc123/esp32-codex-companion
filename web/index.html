@@ -3,7 +3,7 @@
 <body><main class="shell">
 <header><a class="brand" href="/">CODEX <span>COMPANION</span></a><a class="network-entry" href="/wifi">网络设置</a><span id="usbBadge" class="connection">连接设备中</span></header>
 <section class="intro"><h1>设备管理</h1><div class="live-status" role="status"><span class="status-dot"></span><div><strong id="stateLabel">等待连接</strong><span id="stateDetail">正在读取设备</span></div></div></section>
-<nav class="page-nav" aria-label="管理分区"><a href="#screens">屏幕素材</a><a href="#display">显示与提醒</a><a href="#storage">存储管理</a><a href="#diagnostics">诊断</a></nav>
+<nav class="page-nav" aria-label="管理分区"><a href="#screens">屏幕素材</a><a href="#display">灯效</a><a href="#sound">音效</a><a href="#storage">存储管理</a><a href="#diagnostics">诊断</a></nav>
 <section id="screens"><div class="section-title"><h2>屏幕素材</h2><button id="ackDone" class="secondary" type="button" disabled>确认已完成任务</button></div><p id="taskSummary" role="status"></p>
 <section class="screens" aria-label="屏幕前景素材"><article class="screen" data-channel="1" data-role="done">
 <div class="screen-top"><span class="role-label">完成 · 红灯</span></div>
@@ -24,22 +24,30 @@
 <progress max="100" value="0" hidden></progress><p class="upload-message" aria-live="polite"></p>
 <details><summary>选择已有素材</summary><label>目录<input class="existing-dir" placeholder="/data/3_cleaned" maxlength="47"></label><button class="use-existing secondary" type="button">使用此目录</button></details>
 </article></section></section>
-<section id="display" class="settings"><h2>显示与提醒</h2><form id="settingsForm"><div class="form-grid">
+<div class="settings-modules">
+<section id="display" class="settings"><h2>灯效</h2><form id="settingsForm"><div class="form-grid">
 <label>状态范围<select id="scopeMode"><option value="all">全部任务</option><option value="project">指定项目</option><option value="session">指定会话</option></select></label>
 <label>项目 / 会话<select id="scopeTarget" disabled><option value="">全部任务</option></select></label>
-<label>完成颜色<input id="colorDone" type="color" value="#ff0000"></label><label>等待颜色<input id="colorWaiting" type="color" value="#ffff00"></label><label>工作颜色<input id="colorWorking" type="color" value="#00ff00"></label>
-<label>信号灯模式<select id="layout"><option value="traffic">各屏独立</option><option value="all">三屏同步</option></select></label>
-<label>空闲动画<select id="idlePlayback"><option value="black">背景全黑</option><option value="colors">背景全亮</option><option value="off">关闭</option></select></label>
-<label>完成后进入动画<select id="idleDoneDelay"><option value="10">红灯保留 10 秒</option><option value="0">立即进入</option><option value="-1">确认完成后进入</option></select></label>
-<label>三屏动画<select id="animationLink"><option value="independent">独立播放</option><option value="sync">同步循环</option><option value="stagger">错峰循环</option></select></label>
-<label>前景大小 <output id="foregroundValue">112 px</output><input id="foregroundSize" type="range" min="80" max="144" step="8" value="112"></label>
-<label>亮度 <output id="brightnessValue">60%</output><input id="brightness" type="range" min="5" max="100" value="60"></label>
-<label>音量 <output id="volumeValue">40%</output><input id="volume" type="range" min="0" max="80" value="40"></label>
-</div><label class="check"><input id="muted" type="checkbox">静音</label><p id="soundHint" class="hint"></p><div class="actions"><button type="submit">保存设置</button><button id="testDone" class="secondary" type="button">试听完成提示音</button><button id="testWaiting" class="secondary" type="button">试听等待提示音</button></div><p id="settingsMessage" class="message" role="status"></p></form></section>
+<div class="color-controls"><label><input id="colorDone" type="color" value="#ff0000"><span>完成</span></label><label><input id="colorWaiting" type="color" value="#ffff00"><span>等待</span></label><label><input id="colorWorking" type="color" value="#00ff00"><span>工作</span></label></div>
+<label>模式<select id="signalPattern"><option value="steady">静态</option><option value="task_cycle">动态</option></select></label>
+<label>屏幕布局<select id="layout"><option value="traffic">各屏独立</option><option value="all">三屏同步</option></select></label>
+<label>空闲背景<select id="idlePlayback"><option value="black">全黑</option><option value="colors">全亮</option><option value="off">关闭空闲动画</option></select></label>
+<label>完成后动画<select id="idleDoneDelay"><option value="10">红灯保留 10 秒</option><option value="0">立即进入</option><option value="-1">确认完成后进入</option></select></label>
+<label>动画联动<select id="animationLink"><option value="independent">独立播放</option><option value="sync">同步循环</option><option value="stagger">错峰循环</option></select></label>
+<label>屏幕旋转<select id="displayRotation"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>
+<label class="range-field"><span>前景大小 <output id="foregroundValue">112 px</output></span><input id="foregroundSize" type="range" min="80" max="144" step="8" value="112"></label>
+<label class="range-field"><span>亮度 <output id="brightnessValue">60%</output></span><input id="brightness" type="range" min="5" max="100" value="60"></label>
+</div><div class="actions module-actions"><button type="submit">保存灯效</button><p id="settingsMessage" class="message" role="status"></p></div></form></section>
+<section id="sound" class="settings"><h2>音效</h2><form id="soundForm"><div class="form-grid">
+<label>提示音<select id="soundStyle"><option value="original">原版</option><option value="8bit">8-bit</option></select></label>
+<label class="range-field"><span>音量 <output id="volumeValue">30%</output></span><input id="volume" type="range" min="0" max="80" value="30"></label>
+<label class="check"><input id="muted" type="checkbox">静音</label>
+</div><p id="soundHint" class="hint"></p><div class="actions module-actions"><button type="submit">保存音效</button><p id="soundMessage" class="message" role="status"></p></div><div class="actions tone-actions"><button id="testWaiting" class="secondary" type="button">试听回复</button><button id="testDone" class="secondary" type="button">试听完成</button></div></form></section>
+</div>
 <section id="storage" class="storage-settings"><h2>存储</h2><div class="actions"><button id="cleanStorage" class="secondary" type="button" title="保留当前三屏素材，删除其余上传素材">清除内存</button><button id="clearAllStorage" class="secondary danger" type="button" title="删除全部素材，包括当前展示内容">全部清除</button><span id="storageInfo"></span></div><p id="storageBreakdown" class="hint"></p><details id="storageDetails"><summary>素材占用</summary><ul id="storageInventory"></ul></details><p id="storageMessage" class="message" role="status"></p></section>
 <details id="diagnostics" class="advanced"><summary>设备诊断</summary><div class="advanced-content"><div class="actions"><button class="secondary state-test" data-state="working" type="button">测试绿灯</button><button class="secondary state-test" data-state="waiting" type="button">测试黄灯</button><button class="secondary state-test" data-state="done" type="button">测试红灯</button></div>
 <p class="hint" id="networkSummary">读取网络状态…</p><a href="/wifi">打开网络设置</a><pre id="deviceInfo">读取中</pre></div></details>
 <details id="maintenance" class="advanced"><summary>设备维护</summary><div class="advanced-content"><p class="hint">恢复出厂会删除全部素材、Wi-Fi 和自定义设置，重启后重新配网。</p><button id="factoryReset" class="secondary danger" type="button">恢复出厂设置</button><p id="resetMessage" class="message" role="status"></p><a id="resetWifi" href="/wifi" hidden>重新配网</a></div></details>
-<footer><span>v1.3.1</span><a href="https://github.com/jnlpc123/esp32-codex-companion#readme" target="_blank" rel="noopener">使用说明</a></footer>
+<footer><span>v1.4.0</span><a href="https://github.com/jnlpc123/esp32-codex-companion#readme" target="_blank" rel="noopener">使用说明</a></footer>
 <div id="globalMessage" class="global-message" role="status" hidden></div>
 </main></body></html>
