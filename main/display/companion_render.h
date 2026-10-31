@@ -9,4 +9,4 @@ esp_err_t companion_render_init(void);
 esp_err_t companion_render_frame(int channel, const char *path);
 // Animation task only: borrows the existing canvas while no frame is drawing.
 bool companion_render_prepare_cache(const char *jpeg_path,char *cache_path,size_t path_size);
-esp_err_t companion_render_prompt(int channel,const uint8_t *jpeg,size_t size);
+esp_err_t companion_render_prompt(int channel,const uint8_t *jpeg,size_t size,int rotation);

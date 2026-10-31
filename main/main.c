@@ -51,17 +51,17 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(example_mount_storage("/data"));
-    ESP_ERROR_CHECK(companion_init());
-    ESP_ERROR_CHECK(storage_service_init());
-    companion_config_t config; companion_get_config(&config);
     bool mx, my, swap; int rotation;
     orientation(&mx, &my, &swap, &rotation);
+    ESP_ERROR_CHECK(companion_init(rotation));
+    ESP_ERROR_CHECK(storage_service_init());
+    companion_config_t config; companion_get_config(&config);
     InitializeDisplay(mx, my, swap);
-    display_set_rotation((display_rotation_t)rotation);
+    display_set_rotation((display_rotation_t)config.display_rotation);
     display_set_brightness(config.brightness);
     ESP_ERROR_CHECK(companion_render_init());
     // Only short generated notification melodies. No input/RX or media player.
-    notify_tone_init(config.volume, config.muted);
+    notify_tone_init(config.volume, config.muted, config.sound_style);
     ESP_ERROR_CHECK(anim_playback_init() == pdPASS ? ESP_OK : ESP_FAIL);
     companion_restore_media();
     ESP_ERROR_CHECK(companion_usb_start());

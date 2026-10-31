@@ -109,7 +109,14 @@ function taskDotLayout(count){
  const n=Math.min(5,Math.max(0,Math.floor(Number.isFinite(count)?count:0)));
  return Array.from({length:n},(_,index)=>{const dx=-(n-1)*7+index*14;return {x:80+dx,y:144-Math.floor((dx*dx+74)/148),radius:5,hollow:count>5&&index===4};});
 }
-const api={provisionWifi,request,clearMedia,factoryReset,storageSummary,mediaGroups,timingText,storageRequired,validDirectory,uploadSequence,gifFrames,dotColor565,taskDotLayout,...alpha};
+function pack565(v){const n=parseInt(v.slice(1),16);return ((n>>19)<<11)|(((n>>10)&63)<<5)|((n>>3)&31);}
+function settingsConfig(section,get){
+ const value=id=>get(id).value;
+ if(section==='sound')return {sound_style:value('soundStyle'),volume:Number(value('volume')),muted:get('muted').checked};
+ if(section!=='lights')throw Error('Unknown settings module');
+ return {colors:['colorDone','colorWaiting','colorWorking'].map(id=>pack565(value(id))),scope:{mode:value('scopeMode'),target:value('scopeTarget')},layout:value('layout'),signal_pattern:value('signalPattern'),display_rotation:Number(value('displayRotation')),animation_link:value('animationLink'),idle_playback:value('idlePlayback'),idle_done_delay:Number(value('idleDoneDelay')),foreground_size:Number(value('foregroundSize')),brightness:Number(value('brightness'))};
+}
+const api={provisionWifi,request,clearMedia,factoryReset,settingsConfig,storageSummary,mediaGroups,timingText,storageRequired,validDirectory,uploadSequence,gifFrames,dotColor565,taskDotLayout,...alpha};
 root.VibeImport=api;if(typeof module!=='undefined')module.exports=api;
 if(typeof document==='undefined')return;
 
@@ -203,7 +210,6 @@ async function init(){
   finally{busy=false;$('cleanStorage').disabled=$('clearAllStorage').disabled=false;}
  });
  function hex565(v){return '#'+[Math.round((v>>11)*255/31),Math.round(((v>>5)&63)*255/63),Math.round((v&31)*255/31)].map(x=>x.toString(16).padStart(2,'0')).join('');}
- function pack565(v){const n=parseInt(v.slice(1),16);return ((n>>19)<<11)|(((n>>10)&63)<<5)|((n>>3)&31);}
  let catalog={projects:[],sessions:[]},catalogRevision=-1;
  function scopeOptions(target=''){
   const mode=$('scopeMode').value,select=$('scopeTarget');select.replaceChildren();select.disabled=mode==='all';
@@ -214,6 +220,8 @@ async function init(){
   if(target)select.value=target;
  }
  $('scopeMode').addEventListener('change',()=>scopeOptions());
+ function signalOptions(){const enabled=$('signalPattern').value==='task_cycle';if(enabled)$('layout').value='traffic';$('layout').disabled=enabled;}
+ $('signalPattern').addEventListener('change',signalOptions);
  $('ackDone').addEventListener('click',async()=>{try{show(await request('/api/companion',JSON.stringify({v:1,op:'ack'})));toast('已确认，等待电脑同步');}catch(e){toast(e.message);}});
  function show(status,fill=false){
   latest=status;if(localContext)network.pinDevice(status.device_id);const state=stateLabels[status.state]?status.state:'idle';document.body.dataset.state=state;
@@ -222,10 +230,13 @@ async function init(){
   $('usbBadge').textContent=source==='usb'?'USB 已同步':source==='wifi'?'Wi-Fi 已同步':'等待电脑桥接';
   $('stateDetail').textContent=status.manual?'临时灯光测试':source==='usb'?'USB 同步 · Wi-Fi 备用':source==='wifi'?'Wi-Fi 同步':'等待电脑连接';
   if(status.idle_playing)$('stateDetail').textContent='三屏播放中';
-  $('soundHint').textContent=status.sound_available?'':'提示音不可用';
+  $('soundStyle').disabled=!('sound_style' in status.config);
+  $('signalPattern').disabled=!('signal_pattern' in status.config);
+  $('displayRotation').disabled=!('display_rotation' in status.config);
+  $('soundHint').textContent=!status.sound_available?'提示音不可用':!('sound_style' in status.config)?'切换音效需更新至 1.4 固件':'';
   cards.forEach((card,i)=>{
    const role=status.config.layout==='all'?state:card.dataset.role;
-   const count=(status.counts||{})[role]||0,active=status.idle_playing||count>0;
+   const count=(status.counts||{})[role]||0,active=status.active?.[i]??(status.idle_playing||count>0);
    const lamp=card.querySelector('.lamp'),bg=status.backgrounds?.[i]??0x0841;
    card.classList.toggle('active',active);lamp.classList.toggle('inactive',!active);lamp.style.background=hex565(bg);
    const dots=card.querySelector('.task-dots');dots.replaceChildren();dots.style.color=hex565(dotColor565(bg));
@@ -239,7 +250,7 @@ async function init(){
     if(image.dataset.prompt!==network){image.onerror=null;image.src='/network/'+networkImages[network];image.dataset.prompt=network;}
     image.hidden=false;image.style.width=image.style.height='100%';image.style.top='50%';lamp.classList.remove('inactive');dots.replaceChildren();
     label.textContent=network==='ap'?'等待配网':network==='connecting'?'正在连接 Wi-Fi':'配网成功';
-    if(fill||!initialized)card.querySelector('.existing-dir').value=dir;return;
+    if(fill===true||!initialized)card.querySelector('.existing-dir').value=dir;return;
    }
    if(image.dataset.prompt){delete image.dataset.prompt;delete image.dataset.dir;image.style.width=image.style.height=image.style.top='';}
 
@@ -252,12 +263,15 @@ async function init(){
     };image.src=preview;
    }
    if(!dir){image.hidden=true;delete image.dataset.dir;image.removeAttribute('src');}
-   if(fill||!initialized)card.querySelector('.existing-dir').value=dir;
+   if(fill===true||!initialized)card.querySelector('.existing-dir').value=dir;
   });
-  if(fill||!initialized){$('layout').value=status.config.layout;$('foregroundSize').value=status.config.foreground_size;$('brightness').value=status.config.brightness;$('volume').value=status.config.volume;$('muted').checked=status.config.muted;outputs();}
-  if(fill||!initialized){
+  if(fill===true||fill==='sound'||!initialized){$('soundStyle').value=status.config.sound_style||'original';$('volume').value=status.config.volume;$('muted').checked=status.config.muted;outputs();}
+  if(fill===true||fill==='lights'||!initialized){
+   $('layout').value=status.config.layout;$('foregroundSize').value=status.config.foreground_size;$('brightness').value=status.config.brightness;outputs();
+   $('displayRotation').value=String(status.config.display_rotation??0);
    $('idlePlayback').value=status.config.idle_playback||'off';
    $('animationLink').value=status.config.animation_link||'independent';
+   $('signalPattern').value=status.config.signal_pattern||'steady';signalOptions();
    const select=$('idleDoneDelay'),delay=String(status.config.idle_done_delay??10);
    if(!Array.from(select.options).some(option=>option.value===delay)){const option=document.createElement('option');option.value=delay;option.textContent='红灯保留 '+delay+' 秒';select.append(option);}
    select.value=delay;
@@ -265,7 +279,7 @@ async function init(){
   const counts=status.counts||{};
   $('taskSummary').textContent=`工作 ${counts.working||0} · 等待 ${counts.waiting||0} · 未确认完成 ${counts.done||0}`;
   $('ackDone').disabled=!counts.done||status.manual;
-  if(fill||!initialized){
+  if(fill===true||fill==='lights'||!initialized){
    ['colorDone','colorWaiting','colorWorking'].forEach((id,i)=>$(id).value=hex565(status.config.colors?.[i]??[0xf800,0xffe0,0x07e0][i]));
    $('scopeMode').value=status.config.scope?.mode||'all';scopeOptions(status.config.scope?.target||'');
   }
@@ -313,13 +327,15 @@ async function init(){
    catch(error){message.classList.add('error');message.textContent=error.message;}
   });
  });
- $('settingsForm').addEventListener('submit',async e=>{
-  e.preventDefault();if(busy)return;if(!initialized||!latest){toast('请等待设备连接');return;}const button=e.submitter;button.disabled=true;$('settingsMessage').classList.remove('error');
-  try{show(await request('/api/companion',JSON.stringify({v:1,op:'config',config:{colors:['colorDone','colorWaiting','colorWorking'].map(id=>pack565($(id).value)),scope:{mode:$('scopeMode').value,target:$('scopeTarget').value},layout:$('layout').value,animation_link:$('animationLink').value,idle_playback:$('idlePlayback').value,idle_done_delay:Number($('idleDoneDelay').value),foreground_size:Number($('foregroundSize').value),brightness:Number($('brightness').value),volume:Number($('volume').value),muted:$('muted').checked}})),true);$('settingsMessage').textContent='已保存';}
-  catch(error){$('settingsMessage').classList.add('error');$('settingsMessage').textContent=error.message;}
+ for(const [section,form,message] of [['lights','settingsForm','settingsMessage'],['sound','soundForm','soundMessage']])$(form).addEventListener('submit',async e=>{
+  e.preventDefault();if(busy)return;if(!initialized||!latest){toast('请等待设备连接');return;}const button=e.submitter||$(form).querySelector('[type=submit]');button.disabled=true;$(message).classList.remove('error');
+  try{show(await request('/api/companion',JSON.stringify({v:1,op:'config',config:settingsConfig(section,$)})),section);$(message).textContent='已保存';}
+  catch(error){$(message).classList.add('error');$(message).textContent=error.message;}
   finally{button.disabled=false;}
  });
  for(const [id,kind]of [['testDone','done'],['testWaiting','waiting']])$(id).addEventListener('click',async()=>{
+  if(!latest)return;
+  if($('soundStyle').value!==(latest.config.sound_style||'original')||Number($('volume').value)!==latest.config.volume||$('muted').checked!==latest.config.muted){toast('请先保存音效设置');return;}
   try{const result=await request('/api/companion',JSON.stringify({v:1,op:'tone',kind}));toast(result.tone_queued?'已播放提示音':'当前已静音，或设备音频芯片不可用');}catch(error){toast(error.message);}
  });
  document.querySelectorAll('.state-test').forEach(b=>b.addEventListener('click',async()=>{

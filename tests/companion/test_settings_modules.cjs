@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict');
+const {settingsConfig}=require('../../web/companion.js');
+const values={volume:'30',muted:true,soundStyle:'8bit',scopeMode:'session',scopeTarget:'example-session',colorDone:'#ff0000',colorWaiting:'#ffff00',colorWorking:'#00ff00',layout:'traffic',signalPattern:'task_cycle',animationLink:'sync',idlePlayback:'black',idleDoneDelay:'10',foregroundSize:'112',brightness:'60',displayRotation:'90'};
+const read=id=>({value:values[id],checked:values[id]===true});
+const sound=settingsConfig('sound',read);
+assert.deepEqual(sound,{sound_style:'8bit',volume:30,muted:true});
+const lights=settingsConfig('lights',read);
+assert.deepEqual(lights,{colors:[63488,65504,2016],scope:{mode:'session',target:'example-session'},layout:'traffic',signal_pattern:'task_cycle',display_rotation:90,animation_link:'sync',idle_playback:'black',idle_done_delay:10,foreground_size:112,brightness:60});
+assert.equal('volume' in lights,false);assert.equal('brightness' in sound,false);
+assert.throws(()=>settingsConfig('unsupported',read));
+console.log('Settings modules: independent light/sound payloads preserve unsaved settings in the other module: PASS');
